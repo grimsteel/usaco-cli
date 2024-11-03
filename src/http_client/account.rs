@@ -17,14 +17,16 @@ struct LoginResponse {
 }
 
 pub struct UserInfo {
-    username: String,
-    email: String,
-    first_name: String,
-    last_name: String,
-    division: String
+    pub username: String,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub division: String
 }
 
-static LOGGED_OUT_RE: LazyLock<Regex
+static LOGGED_OUT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?m)<script>\s+window.location = "index.php";\s+</script>"#).unwrap()
+});
 
 impl HttpClient {
     /// create a new session with a new login
@@ -73,8 +75,8 @@ impl HttpClient {
     /// refresh the login on an existing session
     pub async fn refresh_login(&self) -> Result<UsacoCredentials> {
         let creds = self.cred_storage.get_credentials().await?;
-        debug!("Refresh login for {}", creds.username);
         if let Some(mut creds) = creds {
+            debug!("Refresh login for {}", creds.username);
             let form_data = HashMap::from([
                 ("uname", &creds.username),
                 ("password", &creds.password)
@@ -121,7 +123,7 @@ impl HttpClient {
             .send().await?;
 
         let body = res.text().await?;
-        if body.contains("<script>window.location = \"index.php\"") {
+        if LOGGED_OUT_RE.find(&body).is_some() {
             // session expired
             Err(HttpClientError::SessionExpired)
         } else {
@@ -135,7 +137,6 @@ impl HttpClient {
         let creds = self.cred_storage.get_credentials().await?;
         if let Some(creds) = creds {
             let result = self.authed_request(req.try_clone().unwrap(), &creds).await;
-            debug!("Request result: {:?}", result);
             match result {
                 Err(HttpClientError::SessionExpired) => {
                     let new_creds = self.refresh_login().await?;
@@ -176,11 +177,21 @@ impl HttpClient {
             .ok_or(HttpClientError::UnexpectedResponse("no email input"))?;
 
         let mut fields = doc.select(&fields_selector);
-        let text1 = fields.next()
-            .map(|e| e.text());
-        let text2 = fields.next()
-            .map(|e| e.text());
+        let username = fields.next()
+            .and_then(|e| e.text().nth(1))
+            .map(|s| s.trim())
+            .ok_or(HttpClientError::UnexpectedResponse("no username field"))?;
+        let division = fields.next()
+            .and_then(|e| e.text().nth(1))
+            .map(|s| s.trim())
+            .ok_or(HttpClientError::UnexpectedResponse("no division field"))?;
 
-        Err(HttpClientError::LoggedOut)
+        Ok(UserInfo {
+            first_name: fname.into(),
+            last_name: lname.into(),
+            username: username.into(),
+            email: email.into(),
+            division: division.into()
+        })
     }
 }
