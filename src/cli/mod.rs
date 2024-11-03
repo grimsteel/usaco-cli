@@ -72,8 +72,15 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result<(), Box<dyn Er
     match args.command {
         Command::Ping => {
             let status = StatusSpinner::new("Loading...", &multi);
-            if client.ping().await? {
+            if let Some(ping) = client.ping().await? {
                 status.finish("USACO servers are online", true);
+                // print the ping
+                println!(
+                    "{} {} {}",
+                    style("⧗").bold().cyan().bright(),
+                    style("Ping:").dim().cyan(),
+                    style(format!("{}ms", ping)).bold().cyan().bright()
+                );
             } else {
                 status.finish("Cannot connect to USACO servers", false);
             }

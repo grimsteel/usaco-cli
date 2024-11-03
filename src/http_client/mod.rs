@@ -2,7 +2,7 @@ mod account;
 //mod problem;
 //mod solution;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use reqwest::{Client, StatusCode};
 use thiserror::Error;
@@ -46,12 +46,14 @@ impl HttpClient {
         }
     }
 
-    /// test connection to usaco.org
-    pub async fn ping(&self) -> Result<bool> {
+    /// test and time connection to usaco.org
+    pub async fn ping(&self) -> Result<Option<u128>> {
+        let start = Instant::now();
         let res = self.client
             .get("https://usaco.org")
             .send()
             .await?;
-        Ok(res.status() == StatusCode::OK)
+        let time = start.elapsed().as_millis();
+        Ok(if res.status() == StatusCode::OK { Some(time) } else { None })
     }
 }
