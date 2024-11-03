@@ -4,6 +4,7 @@ use async_trait::async_trait;
 #[cfg(unix)]
 use secret_service::{Collection, EncryptionType, Item, SecretService};
 use thiserror::Error;
+use log::debug;
 
 pub struct UsacoCredentials {
     pub username: String,
@@ -24,11 +25,15 @@ pub enum CredentialStorageError {
 
 type Result<T> = std::result::Result<T, CredentialStorageError>;
 
-#[async_trait]
+#[async_trait(?Send)]
 pub trait CredentialStorage {
     async fn store_credentials(&self, creds: &UsacoCredentials) -> Result<()>;
     async fn get_credentials(&self) -> Result<Option<UsacoCredentials>>;
     async fn clear_credentials(&self) -> Result<()>;
+
+    async fn logged_in(&self) -> Result<bool> {
+        Ok(self.get_credentials().await?.is_some())
+    }
 }
 
 #[cfg(unix)]
@@ -54,12 +59,14 @@ impl CredentialStorageSecretService {
         // get first result
         Ok(collection.search_items(attrs).await?.into_iter().next())
     }
+
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 #[cfg(unix)]
 impl CredentialStorage for CredentialStorageSecretService {
     async fn get_credentials(&self) -> Result<Option<UsacoCredentials>> {
+        debug!("Loading credentials");
         let coll = self.get_collection().await?;
         let result = self.get_item(&coll).await?;
 
@@ -71,7 +78,10 @@ impl CredentialStorage for CredentialStorageSecretService {
             let secret = String::from_utf8(result.get_secret().await?)
                 .map_err(|_| CredentialStorageError::InvalidPassword)?;
 
-            let (password, session_id) = secret.split_at(secret.find(':').ok_or(CredentialStorageError::InvalidPassword)?);
+            let split_point = secret.find(':').ok_or(CredentialStorageError::InvalidPassword)?;
+
+            let session_id = &secret[..split_point];
+            let password = &secret[split_point + 1..];
 
             Some(UsacoCredentials { username, password: password.into(), session_id: session_id.into() })
         } else {
@@ -89,6 +99,7 @@ impl CredentialStorage for CredentialStorageSecretService {
     }
 
     async fn store_credentials(&self, creds: &UsacoCredentials) -> Result<()> {
+        debug!("saving credentials");
         let coll = self.get_collection().await?;
         
         let attrs = HashMap::from([

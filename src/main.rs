@@ -1,6 +1,8 @@
 mod credential_storage;
 mod http_client;
+mod cli;
 
-fn main() {
-    println!("Hello, world!");
+#[tokio::main]
+async fn main() {
+    cli::run().await;
 }
