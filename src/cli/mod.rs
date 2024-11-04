@@ -2,18 +2,19 @@ mod status_spinner;
 mod auth;
 mod preferences;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, CommandFactory};
+use clap_complete::{Shell, generate};
 use log::{LevelFilter, error};
 use indicatif_log_bridge::LogWrapper;
 use console::style;
 use indicatif::MultiProgress;
-use std::{sync::Arc, error::Error};
+use std::{sync::Arc, error::Error, io::stdout};
 use crate::{http_client::HttpClient, credential_storage::CredentialStorageSecretService, preferences::PreferencesStore};
 use status_spinner::StatusSpinner;
 
 /// USACO command-line interface
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = "USACO command-line interface: supports viewing problem info, automatically testing solutions, and uploading solutions to USACO grading servers.")]
+#[command(version, about, long_about = "USACO command-line interface: supports viewing problem info, automatically testing solutions, and uploading solutions to USACO grading servers.", name = "usaco")]
 struct Args {
     /// Maximum logging level
     #[arg(short, long, value_enum)]
@@ -34,6 +35,10 @@ enum Command {
     Preferences {
         #[command(subcommand)]
         command: Option<preferences::Command>
+    },
+    /// Generate shell completion files
+    Completion {
+        shell: Shell
     },
     /// Test connection to USACO servers
     Ping
@@ -78,6 +83,11 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result<(), Box<dyn Er
             } else {
                 status.finish("Cannot connect to USACO servers", false);
             }
+        },
+        Command::Completion { shell } => {
+            let mut command = Args::command();
+            let name = command.get_name().to_string();
+            generate(shell, &mut command, name, &mut stdout());
         },
         Command::Auth { command } => auth::handle(command, client, cred_storage, multi).await?,
         Command::Preferences { command } => preferences::handle(command, &prefs, multi).await?
