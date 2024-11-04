@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{fs::{read, write, try_exists}, process::Command};
 use thiserror::Error;
 use std::{cell::{Ref, RefMut, RefCell}, path::PathBuf};
+use clap::ValueEnum;
 use log::debug;
 
 const PREF_FILE_NAME: &'static str = "usaco-cli.json";
@@ -19,7 +20,7 @@ pub enum PreferencesError {
 type Result<T> = std::result::Result<T, PreferencesError>;
 
 /// preferred c++ compiler
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum CPPCompiler {
     GCC = 0,
     Clang = 1
@@ -32,7 +33,7 @@ impl Default for CPPCompiler {
 }
 
 /// preferred language for boilerplate code
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Language {
     CPP = 0,
     Python = 1

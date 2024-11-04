@@ -16,8 +16,26 @@ pub enum Command {
     /// Set a preference key. Will prompt for value
     Set {
         /// Preference key to set
+        #[command(subcommand)]
+        key: SetValues
+    }
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SetValues {
+    /// Default problem ID for problem and solution commands
+    CurrentProblem {
+        value: Option<u64>
+    },
+    /// Preferred language for boilerplate code
+    PreferredLanguage {
         #[arg(value_enum)]
-        key: PrefKey
+        value: Option<Language>
+    },
+    /// Preferred C++ compiler
+    CPPCompiler {
+        #[arg(value_enum)]
+        value: Option<CPPCompiler>
     }
 }
 
@@ -30,8 +48,6 @@ pub enum PrefKey {
     /// Preferred C++ compiler
     CPPCompiler
 }
-
-
 
 pub async fn handle(command: Option<Command>, prefs: &PreferencesStore, multi: MultiProgress) -> Result<(), Box<dyn Error>> {
     match command {
@@ -66,43 +82,53 @@ pub async fn handle(command: Option<Command>, prefs: &PreferencesStore, multi: M
             {
                 let mut lock = prefs.write()?;
                 match key {
-                    // prompt for corresponding value
-                    PrefKey::CurrentProblem => {
-                        let input = Input::with_theme(&ColorfulTheme::default())
-                            .with_prompt("Enter a problem ID")
-                            .validate_with(|input: &String| {
-                                input.parse::<u64>().map(|_| ())
-                            })
-                            .interact_text()?
-                            .parse::<u64>().unwrap();
-
+                    // prompt for corresponding value (if needed)
+                    SetValues::CurrentProblem { value } => {
+                        let input = if let Some(value) = value { value } else {
+                            Input::with_theme(&ColorfulTheme::default())
+                                .with_prompt("Enter a problem ID")
+                                .validate_with(|input: &String| {
+                                    input.parse::<u64>().map(|_| ())
+                                })
+                                .interact_text()?
+                                .parse::<u64>().unwrap()
+                        };
                         lock.current_problem = Some(input);
                     },
-                    PrefKey::PreferredLanguage => {
-                        let input = Select::with_theme(&ColorfulTheme::default())
-                            .with_prompt("Select a language")
-                            .items(&["C++", "Python"])
-                            .default(lock.preferred_language as usize)
-                            .interact()?;
+                    SetValues::PreferredLanguage { value } => {
+                        let input = if let Some(value) = value { value } else {
+                            let result = Select::with_theme(&ColorfulTheme::default())
+                                .with_prompt("Select a language")
+                                .items(&["C++", "Python"])
+                                .default(lock.preferred_language as usize)
+                                .interact()?;
 
-                        lock.preferred_language = match input {
-                            0 => Language::CPP,
-                            1 => Language::Python,
-                            _ => unreachable!()
-                        }
+                            // parse back into enum value
+                            match result {
+                                0 => Language::CPP,
+                                1 => Language::Python,
+                                _ => unreachable!()
+                            }
+                        };
+
+                        lock.preferred_language = input;
                     },
-                    PrefKey::CPPCompiler => {
-                        let input = Select::with_theme(&ColorfulTheme::default())
-                            .with_prompt("Select a C++ compiler")
-                            .items(&["g++", "clang"])
-                            .default(lock.cpp_compiler as usize)
-                            .interact()?;
+                    SetValues::CPPCompiler { value } => {
+                        let input = if let Some(value) = value { value } else {
+                            let result = Select::with_theme(&ColorfulTheme::default())
+                                .with_prompt("Select a C++ compiler")
+                                .items(&["g++", "clang"])
+                                .default(lock.cpp_compiler as usize)
+                                .interact()?;
 
-                        lock.cpp_compiler = match input {
-                            0 => CPPCompiler::GCC,
-                            1 => CPPCompiler::Clang,
-                            _ => unreachable!()
-                        }
+                            match result {
+                                0 => CPPCompiler::GCC,
+                                1 => CPPCompiler::Clang,
+                                _ => unreachable!()
+                            }
+                        };
+
+                        lock.cpp_compiler = input; 
                     }
                 }
             }
