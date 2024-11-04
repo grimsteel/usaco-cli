@@ -1,5 +1,6 @@
 mod status_spinner;
 mod auth;
+mod preferences;
 
 use clap::{Parser, Subcommand};
 use log::{LevelFilter, error};
@@ -7,7 +8,7 @@ use indicatif_log_bridge::LogWrapper;
 use console::style;
 use indicatif::MultiProgress;
 use std::{sync::Arc, error::Error};
-use crate::{http_client::HttpClient, credential_storage::CredentialStorageSecretService, preferences::Preferences};
+use crate::{http_client::HttpClient, credential_storage::CredentialStorageSecretService, preferences::PreferencesStore};
 use status_spinner::StatusSpinner;
 
 /// USACO command-line interface
@@ -28,6 +29,11 @@ enum Command {
     Auth {
         #[command(subcommand)]
         command: auth::Command
+    },
+    /// Manage CLI preferences
+    Preferences {
+        #[command(subcommand)]
+        command: Option<preferences::Command>
     },
     /// Test connection to USACO servers
     Ping
@@ -55,7 +61,7 @@ fn setup_logging() -> (MultiProgress, Args) {
 async fn run_internal(multi: MultiProgress, args: Args) -> Result<(), Box<dyn Error>> {
     let cred_storage = Arc::new(CredentialStorageSecretService::init().await?);
     let client = HttpClient::init(cred_storage.clone());
-    let prefs = Preferences::from_file().await?;
+    let prefs = PreferencesStore::from_file().await?;
 
     match args.command {
         Command::Ping => {
@@ -73,7 +79,8 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result<(), Box<dyn Er
                 status.finish("Cannot connect to USACO servers", false);
             }
         },
-        Command::Auth { command } => auth::handle(command, client, cred_storage, multi).await?
+        Command::Auth { command } => auth::handle(command, client, cred_storage, multi).await?,
+        Command::Preferences { command } => preferences::handle(command, &prefs, multi).await?
     }
 
     Ok(())
