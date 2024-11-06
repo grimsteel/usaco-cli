@@ -1,6 +1,7 @@
 mod status_spinner;
 mod auth;
 mod preferences;
+mod problem;
 
 use clap::{Parser, Subcommand, CommandFactory};
 use clap_complete::{Shell, generate};
@@ -8,7 +9,7 @@ use log::{LevelFilter, error};
 use indicatif_log_bridge::LogWrapper;
 use console::style;
 use indicatif::MultiProgress;
-use std::{sync::Arc, error::Error, io::stdout};
+use std::{sync::Arc, error::Error, io::stdout, process::ExitCode};
 use crate::{http_client::HttpClient, credential_storage::CredentialStorageSecretService, preferences::PreferencesStore};
 use status_spinner::StatusSpinner;
 
@@ -30,6 +31,11 @@ enum Command {
     Auth {
         #[command(subcommand)]
         command: auth::Command
+    },
+    /// View problem info
+    Problem {
+        #[command(subcommand)]
+        command: problem::Command
     },
     /// Manage CLI preferences
     Preferences {
@@ -90,15 +96,19 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result<(), Box<dyn Er
             generate(shell, &mut command, name, &mut stdout());
         },
         Command::Auth { command } => auth::handle(command, client, cred_storage, multi).await?,
+        Command::Problem { command } => problem::handle(command, client, multi).await?,
         Command::Preferences { command } => preferences::handle(command, &prefs, multi).await?
     }
 
     Ok(())
 }
 
-pub async fn run() {
+pub async fn run() -> ExitCode {
     let (multi, args) = setup_logging();
     if let Err(err) = run_internal(multi, args).await {
         error!("Unexpected error: {}", err);
+        return ExitCode::from(1);
     }
+
+    ExitCode::SUCCESS
 }

@@ -1,9 +1,10 @@
 mod account;
-//mod problem;
+mod problem;
 //mod solution;
 
-use std::{sync::Arc, time::Instant};
+use std::{sync::{Arc, LazyLock}, time::Instant};
 
+use regex::Regex;
 use reqwest::{Client, StatusCode};
 use thiserror::Error;
 
@@ -26,11 +27,34 @@ pub enum HttpClientError {
     #[error("Invalid username or password!")]
     InvalidUsernamePassword,
 
-    #[error("Unexpected or malformed response from USACO backend")]
+    #[error("Problem not found")]
+    ProblemNotFound,
+
+    #[error("Unexpected or malformed response from USACO backend: {0}")]
     UnexpectedResponse(&'static str)
 }
 
 type Result<T> = std::result::Result<T, HttpClientError>;
+
+trait IntoResult<T> {
+    fn ir(self) -> Result<T> where Self: Sized {
+        self.ir_msg("missing field")
+    }
+    fn ir_msg(self, msg: &'static str) -> Result<T>;
+}
+
+impl<T> IntoResult<T> for Option<T> {
+    fn ir_msg(self, msg: &'static str) -> Result<T> {
+        match self {
+            Self::Some(v) => Ok(v),
+            None => Err(HttpClientError::UnexpectedResponse(msg))
+        }
+    }
+}
+
+static REDIRECT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?m)<script>\s+window.location ?= ?['"]index.php['"];?\s+</script>"#).unwrap()
+});
 
 pub struct HttpClient {
     cred_storage: Arc<dyn CredentialStorage>,

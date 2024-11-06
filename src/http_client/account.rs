@@ -1,15 +1,14 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::collections::HashMap;
 
 use cookie::Cookie as Cookie;
 use reqwest::{header::COOKIE, RequestBuilder};
 use scraper::{Html, Selector};
 use serde::Deserialize;
 use log::debug;
-use regex::Regex;
 
 use crate::credential_storage::UsacoCredentials;
 
-use super::{HttpClient, HttpClientError, Result};
+use super::{HttpClient, HttpClientError, Result, REDIRECT_RE, IntoResult};
 
 #[derive(Deserialize)]
 struct LoginResponse {
@@ -23,10 +22,6 @@ pub struct UserInfo {
     pub last_name: String,
     pub division: String
 }
-
-static LOGGED_OUT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?m)<script>\s+window.location = "index.php";\s+</script>"#).unwrap()
-});
 
 impl HttpClient {
     /// create a new session with a new login
@@ -123,7 +118,7 @@ impl HttpClient {
             .send().await?;
 
         let body = res.text().await?;
-        if LOGGED_OUT_RE.find(&body).is_some() {
+        if REDIRECT_RE.find(&body).is_some() {
             // session expired
             Err(HttpClientError::SessionExpired)
         } else {
@@ -164,27 +159,27 @@ impl HttpClient {
         let fname = doc.select(&fname_selector)
             .into_iter().next()
             .and_then(|e| e.value().attr("value"))
-            .ok_or(HttpClientError::UnexpectedResponse("no fname input"))?;
+            .ir()?;
 
         let lname = doc.select(&lname_selector)
             .into_iter().next()
             .and_then(|e| e.value().attr("value"))
-            .ok_or(HttpClientError::UnexpectedResponse("no lname input"))?;
+            .ir()?;
         
         let email = doc.select(&email_selector)
             .into_iter().next()
             .and_then(|e| e.value().attr("value"))
-            .ok_or(HttpClientError::UnexpectedResponse("no email input"))?;
+            .ir()?;
 
         let mut fields = doc.select(&fields_selector);
         let username = fields.next()
             .and_then(|e| e.text().nth(1))
             .map(|s| s.trim())
-            .ok_or(HttpClientError::UnexpectedResponse("no username field"))?;
+            .ir()?;
         let division = fields.next()
             .and_then(|e| e.text().nth(1))
             .map(|s| s.trim())
-            .ok_or(HttpClientError::UnexpectedResponse("no division field"))?;
+            .ir()?;
 
         Ok(UserInfo {
             first_name: fname.into(),
