@@ -8,7 +8,7 @@ use log::debug;
 
 use crate::credential_storage::UsacoCredentials;
 
-use super::{HttpClient, HttpClientError, Result, REDIRECT_RE, IntoResult};
+use super::{HttpClient, HttpClientError, Result, REDIRECT_RE, IntoResult, Division};
 
 #[derive(Deserialize)]
 struct LoginResponse {
@@ -20,7 +20,7 @@ pub struct UserInfo {
     pub email: String,
     pub first_name: String,
     pub last_name: String,
-    pub division: String
+    pub division: Division
 }
 
 impl HttpClient {
@@ -178,15 +178,15 @@ impl HttpClient {
             .ir()?;
         let division = fields.next()
             .and_then(|e| e.text().nth(1))
-            .map(|s| s.trim())
-            .ir()?;
+            .and_then(|s| Division::from_str(s.trim()))
+            .ir_msg("could not find or parse division")?;
 
         Ok(UserInfo {
             first_name: fname.into(),
             last_name: lname.into(),
             username: username.into(),
             email: email.into(),
-            division: division.into()
+            division
         })
     }
 }

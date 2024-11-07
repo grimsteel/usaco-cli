@@ -56,6 +56,37 @@ static REDIRECT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?m)<script>\s+window.location ?= ?['"]index.php['"];?\s+</script>"#).unwrap()
 });
 
+#[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Copy, Clone)]
+pub enum Division {
+    Bronze,
+    Silver,
+    Gold,
+    Platinum
+}
+
+impl Division {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "bronze" => Some(Self::Bronze),
+            "silver" => Some(Self::Silver),
+            "gold" => Some(Self::Gold),
+            "platinum" => Some(Self::Platinum),
+            _ => None
+        }
+    }
+    /// Color the division with the division colors
+    pub fn to_ansi(&self) -> String {
+        let div_format = match self {
+            Self::Gold => ("Gold", "246;221;138"),
+            Self::Silver => ("Silver", "199;199;199"),
+            Self::Bronze => ("Bronze", "232;175;140"),
+            Self::Platinum => ("Platinum", "207;211;180")
+        };
+
+        format!("\x1b[38;2;{}m{}\x1b[0m", div_format.1, div_format.0)
+    }
+}
+
 pub struct HttpClient {
     cred_storage: Arc<dyn CredentialStorage>,
     client: Client

@@ -1,44 +1,24 @@
 use std::sync::LazyLock;
 use scraper::{Html, Selector, ElementRef};
 use regex::{Regex, Captures};
-use super::{Result, REDIRECT_RE, HttpClientError, HttpClient, IntoResult};
+use super::{Result, REDIRECT_RE, HttpClientError, HttpClient, IntoResult, Division};
 
 #[derive(Debug)]
 pub struct Problem {
-    name: String,
-    id: u64,
+    pub name: String,
+    pub id: u64,
     /// human readable contest name
-    contest: String,
-    division: Division,
+    pub contest: String,
+    pub division: Division,
     /// just 1, 2, or 3
-    problem_num: u8,
+    pub problem_num: u8,
     /// ansi escape formatted description
-    description: String,
+    pub description: String,
     // sample test cases
-    test_cases: Vec<TestCase>,
+    pub test_cases: Vec<TestCase>,
     /// all new problems use stdio, older ones use .in and .out files
-    input: IoMode,
-    output: IoMode
-}
-
-#[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Copy, Clone)]
-pub enum Division {
-    Bronze,
-    Silver,
-    Gold,
-    Platinum
-}
-
-impl Division {
-    fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "bronze" => Some(Self::Bronze),
-            "silver" => Some(Self::Silver),
-            "gold" => Some(Self::Gold),
-            "platinum" => Some(Self::Platinum),
-            _ => None
-        }
-    }
+    pub input: IoMode,
+    pub output: IoMode
 }
 
 #[derive(Debug)]

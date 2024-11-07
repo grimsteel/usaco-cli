@@ -94,28 +94,19 @@ pub async fn handle(command: Command, client: HttpClient, cred_storage: Arc<dyn 
                     
                     println!(
                         "{} {} {}",
-                        style("Name:").dim(),
+                        style("Name:").dim().bold(),
                         style(first_name).bright().magenta(),
                         style(last_name).bright().magenta()
                     );
                     println!(
                         "{} {}",
-                        style("Email:").dim(),
+                        style("Email:").dim().bold(),
                         style(email).bright().blue(),
                     );
-                    // Color the division with the division colors
-                    let div_format = match division.as_str() {
-                        "Gold" => "246;221;138",
-                        "Silver" => "199;199;199",
-                        "Bronze" => "232;175;140",
-                        "Platinum" => "207;211;180",
-                        _ => "255;255;255"
-                    };
                     println!(
-                        "{} \x1b[38;2;{}m{}\x1b[0m",
-                        style("Division:").dim(),
-                        div_format,
-                        style(division).bright()
+                        "{} {}",
+                        style("Division:").dim().bold(),
+                        style(division.to_ansi()).bright()
                     );
                 },
                 Err(HttpClientError::LoggedOut) => {
