@@ -10,7 +10,7 @@ use indicatif_log_bridge::LogWrapper;
 use console::style;
 use indicatif::MultiProgress;
 use std::{sync::Arc, error::Error, io::stdout, process::ExitCode};
-use crate::{http_client::HttpClient, credential_storage::CredentialStorageSecretService, preferences::PreferencesStore};
+use crate::{http_client::HttpClient, credential_storage::CredentialStorageSecretService, preferences::DataStore};
 use status_spinner::StatusSpinner;
 
 /// USACO command-line interface
@@ -72,7 +72,7 @@ fn setup_logging() -> (MultiProgress, Args) {
 async fn run_internal(multi: MultiProgress, args: Args) -> Result<(), Box<dyn Error>> {
     let cred_storage = Arc::new(CredentialStorageSecretService::init().await?);
     let client = HttpClient::init(cred_storage.clone());
-    let prefs = PreferencesStore::from_file().await?;
+    let prefs = DataStore::new().await?;
 
     match args.command {
         Command::Ping => {
@@ -96,7 +96,7 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result<(), Box<dyn Er
             generate(shell, &mut command, name, &mut stdout());
         },
         Command::Auth { command } => auth::handle(command, client, cred_storage, multi).await?,
-        Command::Problem { command } => problem::handle(command, client, multi).await?,
+        Command::Problem { command } => problem::handle(command, client, &prefs, multi).await?,
         Command::Preferences { command } => preferences::handle(command, &prefs, multi).await?
     }
 

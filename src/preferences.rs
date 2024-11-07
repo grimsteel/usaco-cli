@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
-use tokio::{fs::{read, write, try_exists}, process::Command};
+use tokio::fs::{read, write, try_exists, create_dir_all};
 use thiserror::Error;
 use std::{cell::{Ref, RefMut, RefCell}, path::PathBuf};
 use clap::ValueEnum;
+use directories::ProjectDirs;
 use log::debug;
 
-const PREF_FILE_NAME: &'static str = "usaco-cli.json";
+const PREF_FILE_NAME: &'static str = "config.json";
 
 #[derive(Error, Debug)]
 pub enum PreferencesError {
@@ -56,59 +57,33 @@ pub struct Preferences {
 }
 
 #[derive(Debug)]
-pub struct PreferencesStore {
+pub struct DataStore {
     preferences: RefCell<Preferences>,
-    filename: String
+    dirs: ProjectDirs
 }
 
-impl PreferencesStore {
+impl DataStore {
     /// Load preferences from the preferences file
     /// Searches in the current directory, then in the nearest git dir
     /// If none exists, create one in the nearest git dir, or if none exists, in the current dir
-    pub async fn from_file() -> Result<Self> {
-        if try_exists(PREF_FILE_NAME).await? {
-            debug!("Loading preferences from current directory");
+    pub async fn new() -> Result<Self> {
+        let dirs = ProjectDirs::from("com", "grimsteel", "usaco-cli").unwrap();
+        let config_path = dirs.config_dir().join(PREF_FILE_NAME);
+        if try_exists(&config_path).await? {
+            debug!("Loading preferences from {}", config_path.display());
             Ok(Self {
-                preferences: RefCell::new(serde_json::from_slice(&read(PREF_FILE_NAME).await?)?),
-                filename: PREF_FILE_NAME.into()
+                preferences: RefCell::new(serde_json::from_slice(&read(config_path).await?)?),
+                dirs
             })
         } else {
-            // search in git directory
-            if let Ok(result) = Command::new("git")
-                .arg("rev-parse")
-                .arg("--show-toplevel")
-                .output()
-                .await
-            {
-                if result.status.code() == Some(0) {
-                    if let Ok(git_dir) = String::from_utf8(result.stdout) {
-                        let mut filename = PathBuf::from(git_dir.trim());
-                        filename.push(PREF_FILE_NAME);
-                        return if try_exists(&filename).await? {
-                            debug!("Loading preferences from current git directory: {}", filename.display());
-                            Ok(Self {
-                                preferences: RefCell::new(serde_json::from_slice(&read(&filename).await?)?),
-                                filename: filename.into_os_string().into_string().unwrap()
-                            })
-                        } else {
-                            debug!("Creating preferences in current git directory: {}", filename.display());
-                            // create in git dir
-                            write(&filename, "{}").await?;
-                            Ok(Self {
-                                preferences: RefCell::new(Preferences::default()),
-                                filename: filename.into_os_string().into_string().unwrap()
-                            })
-                        };
-                    }
-                }
-            }
-            debug!("Creating preferences in current directory");
+            debug!("Creating preferences at {}", config_path.display());
             
-            // create in current dir
-            write(PREF_FILE_NAME, "{}").await?;
+            // create in user config dir
+            create_dir_all(dirs.config_dir()).await?;
+            write(&config_path, "{}").await?;
             Ok(Self {
                 preferences: RefCell::new(Preferences::default()),
-                filename: PREF_FILE_NAME.into()
+                dirs
             })
         }
     }
@@ -116,7 +91,9 @@ impl PreferencesStore {
     pub async fn save(&self) -> Result<()> {
         let lock = self.read()?;
         let serialized = serde_json::to_vec(&*lock)?;
-        write(&self.filename, serialized).await?;
+        // write to config dir
+        create_dir_all(self.dirs.config_dir()).await?;
+        write(&self.dirs.config_dir().join(PREF_FILE_NAME), serialized).await?;
         Ok(())
     }
 

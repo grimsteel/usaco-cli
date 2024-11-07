@@ -2,7 +2,7 @@ use clap::{Subcommand, ValueEnum};
 use dialoguer::{Input, Select, theme::ColorfulTheme};
 use indicatif::MultiProgress;
 use console::{user_attended, style, strip_ansi_codes};
-use crate::{preferences::{PreferencesStore, Language, CPPCompiler}, cli::status_spinner::StatusSpinner};
+use crate::{preferences::{DataStore, Language, CPPCompiler}, cli::status_spinner::StatusSpinner};
 use std::{error::Error, borrow::Cow};
 
 #[derive(Subcommand, Debug)]
@@ -49,7 +49,7 @@ pub enum PrefKey {
     CPPCompiler
 }
 
-pub async fn handle(command: Option<Command>, prefs: &PreferencesStore, multi: MultiProgress) -> Result<(), Box<dyn Error>> {
+pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiProgress) -> Result<(), Box<dyn Error>> {
     match command {
         Some(Command::Get { key }) => {
             let lock = prefs.read()?;

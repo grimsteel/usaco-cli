@@ -4,21 +4,24 @@ use console::style;
 use dialoguer::{Input, theme::ColorfulTheme};
 use indicatif::MultiProgress;
 use super::status_spinner::StatusSpinner;
-use crate::http_client::{HttpClient, HttpClientError, UserInfo};
+use crate::{http_client::{HttpClient, HttpClientError}, preferences::DataStore};
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Display problem metadata and information
     Info {
-        /// Problem ID. Will prompt if not given
+        /// Problem ID. Will prompt if not given and if current problem is not set
         id: Option<u64>
     }
 }
 
-pub async fn handle(command: Command, client: HttpClient, multi: MultiProgress) -> Result<(), Box<dyn Error>> {
+pub async fn handle(command: Command, client: HttpClient, store: &DataStore, multi: MultiProgress) -> Result<(), Box<dyn Error>> {
     match command {
         Command::Info { id } => {
             let id = if let Some(id) = id {
+                id
+            } else if let Some(id) = store.read()?.current_problem {
+                // use current problem
                 id
             } else {
                 // prompt
@@ -54,7 +57,7 @@ pub async fn handle(command: Command, client: HttpClient, multi: MultiProgress) 
                     
                 },
                 Err(HttpClientError::ProblemNotFound) => {
-                    status.finish("Problem not found", false);
+                    status.finish(&format!("Problem {} not found", id), false);
                 },
                 Err(e) => Err(e)?
             }
