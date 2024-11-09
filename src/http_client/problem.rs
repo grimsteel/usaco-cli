@@ -71,7 +71,7 @@ fn parse_problem_description(el: ElementRef<'_>, is_pre: bool) -> Option<String>
                             "geq" | "ge" => "≥",
                             "lt" => "<",
                             "gt" => ">",
-                            "dots" => "…",
+                            "dots" | "ldots" => "…",
                             "cdot" => "•",
                             _ => "?"
                         }
@@ -112,7 +112,7 @@ fn parse_problem_description(el: ElementRef<'_>, is_pre: bool) -> Option<String>
                         );
                     } else if e.name() == "pre" {
                         result = style(result)
-                            .italic()
+                            .italic().color256(255)
                             .to_string();
                     }
                     parts.push(result);
