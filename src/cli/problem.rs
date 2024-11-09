@@ -52,18 +52,18 @@ pub async fn handle(command: Command, client: HttpClient, store: &DataStore, mul
                             .cyan()
                     ), true);
                     // problem name
-                    println!("{}", style(problem.name).bold().bright());
+                    println!("\n{}", style(problem.name).bold().bright().underlined());
                     // contest/division/number
                     println!(
-                        "{}",
+                        "{}\n",
                         style(format!(
                             "{} {}{}",
                             style(problem.contest).yellow(),
-                            style(problem.division.to_ansi()),
+                            problem.division.to_ansi(),
                             style(format!(": Problem {}", problem.problem_num)).dim().magenta()
                         )).dim()
                     );
-                    
+                    println!("{}", problem.description);
                 },
                 Err(HttpClientError::ProblemNotFound) => {
                     status.finish(&format!("Problem {} not found", id), false);

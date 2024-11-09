@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
-use scraper::{Html, Selector, ElementRef};
+use scraper::{Html, Selector, ElementRef, Node};
 use regex::{Regex, Captures};
+use console::style;
 use super::{Result, REDIRECT_RE, HttpClientError, HttpClient, IntoResult, Division};
 
 #[derive(Debug)]
@@ -33,25 +34,95 @@ pub enum IoMode {
     File(String)
 }
 
-static H1_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"^USACO ([^,]+), (\w+)$"#).unwrap()
+static MATH_ENTITY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\\(\w+)"#).unwrap()
 });
 
-static H2_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"^Problem (\d)\. (.+)$"#).unwrap()
+static LATEX_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\$(.*?)\$"#).unwrap()
 });
 
-static IO_MODE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"^(?:OUTPUT|INPUT) FORMAT \(file ([\w\.]+)\):$"#).unwrap()
+static WS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\s+"#).unwrap()
 });
 
-// helper function to parse text with re
+/// helper function to parse text with re
 fn parse_el_regex<'a>(el: Option<ElementRef<'a>>, re: &Regex) -> Option<Captures<'a>> {
     re.captures(el?
                 .text()
                 .next()?
                 .trim()
     )  
+}
+
+/// parse problem HTML into ansi escaped text
+fn parse_problem_description(el: ElementRef<'_>, is_pre: bool) -> Option<String> {
+    let mut parts: Vec<String> = vec![];
+    for c in el.children() {
+        match c.value() {
+            Node::Text(text) => {
+                let text = text.trim();
+                // text node - add this to list if not empty
+                if text.len() > 0 {
+                    // handle match entities
+                    let text = MATH_ENTITY_RE.replace_all(text, |caps: &Captures| {
+                        match caps.get(1).unwrap().as_str() {
+                            "leq" | "le" => "≤",
+                            "geq" | "ge" => "≥",
+                            "lt" => "<",
+                            "gt" => ">",
+                            "dots" => "…",
+                            "cdot" => "•",
+                            _ => "?"
+                        }
+                    });
+                    // handle math formatting
+                    let text = LATEX_RE.replace_all(text.as_ref(), |caps: &Captures| {
+                        style(caps.get(1).unwrap().as_str()).italic().yellow().to_string()
+                    });
+                    if is_pre {
+                        parts.push(text.into());
+                    } else {
+                        let mut text: String = WS_RE.replace_all(text.as_ref(), " ").into();
+                        if text.starts_with("Problem credits") {
+                            text = style(text).magenta().to_string();
+                        }
+                        parts.push(text);
+                    }
+                }
+            },
+            Node::Element(e) => {
+                // convert c to an element
+                let c_el = ElementRef::wrap(c).unwrap();
+                if e.name() == "ul" {
+                    // format like a list
+                    let children = c_el.child_elements()
+                        .filter_map(|e| parse_problem_description(e, false))
+                        .map(|s| format!(" • {}", s))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    parts.push(children);
+                } else if let Some(mut result) = parse_problem_description(c_el, e.name() == "pre") {
+                    if e.name() == "h4" {
+                        result = format!(
+                            "\n{}",
+                            style(format!("{}", result))
+                                .bold().blue().underlined()
+                                .to_string()
+                        );
+                    } else if e.name() == "pre" {
+                        result = style(result)
+                            .italic()
+                            .to_string();
+                    }
+                    parts.push(result);
+                }
+            },
+            _ => {}
+        }
+    }
+    // don't return anything if empty (to save memory)
+    if parts.len() == 0 { None } else { Some(parts.join("\n")) }
 }
 
 impl HttpClient {
@@ -71,25 +142,28 @@ impl HttpClient {
         let h2_selector = Selector::parse("h2").unwrap();
         let mut headings = doc.select(&h2_selector);
         // parse the first heading (contest and division)
-        let h1 = parse_el_regex(headings.next(), &H1_RE)
+        let h1_re =  Regex::new(r#"^USACO ([^,]+), (\w+)$"#).unwrap();
+        let h1 = parse_el_regex(headings.next(), &h1_re)
             .ir_msg("could not find first heading")?;
         // parse the second heading (problem number/name)
-        let h2 = parse_el_regex(headings.next(), &H2_RE)
+        let h2_re = Regex::new(r#"^Problem (\d)\. (.+)$"#).unwrap();
+        let h2 = parse_el_regex(headings.next(), &h2_re)
             .ir_msg("could not find second heading")?;
 
         // parse the input/output format
         let input_format_selector = Selector::parse(".prob-in-spec > h4").unwrap();
         let output_format_selector = Selector::parse(".prob-out-spec > h4").unwrap();
+        let io_mode_re = Regex::new(r#"^(?:OUTPUT|INPUT) FORMAT \(file ([\w\.]+)\):$"#).unwrap();
         let input_format = match parse_el_regex(
             doc.select(&input_format_selector).next(),
-            &IO_MODE_RE
+            &io_mode_re
         ) {
             Some(cap) => IoMode::File(cap.get(1).unwrap().as_str().into()),
             None => IoMode::Stdio, // default to stdio
         };
         let output_format = match parse_el_regex(
             doc.select(&output_format_selector).next(),
-            &IO_MODE_RE
+            &io_mode_re
         ) {
             Some(cap) => IoMode::File(cap.get(1).unwrap().as_str().into()),
             None => IoMode::Stdio,
@@ -112,6 +186,13 @@ impl HttpClient {
             .zip(out_cases)
             .map(|(input, output)| TestCase { input, output })
             .collect();
+
+        let description_selector = Selector::parse("#probtext-text").unwrap();
+        let description = doc
+            .select(&description_selector)
+            .next()
+            .ir_msg("could not find problem description")?;
+        let description = parse_problem_description(description, false).unwrap_or_else(|| "".into());
         
         Ok(Problem {
             id: problem_id,
@@ -122,7 +203,7 @@ impl HttpClient {
             input: input_format,
             output: output_format,
             test_cases,
-            description: "".into()
+            description
         })
     }
 }

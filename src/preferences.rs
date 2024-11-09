@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tokio::fs::{read, write, try_exists, create_dir_all};
 use thiserror::Error;
-use std::{cell::{Ref, RefMut, RefCell}, path::PathBuf};
+use std::cell::{Ref, RefMut, RefCell};
 use clap::ValueEnum;
 use directories::ProjectDirs;
 use log::debug;
