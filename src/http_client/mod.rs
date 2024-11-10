@@ -7,10 +7,12 @@ use std::{sync::{Arc, LazyLock}, time::Instant};
 use regex::Regex;
 use reqwest::{Client, StatusCode};
 use thiserror::Error;
+use serde::{Serialize, Deserialize};
 
 use crate::credential_storage::{CredentialStorage, CredentialStorageError};
 
 pub use account::UserInfo;
+pub use problem::Problem;
 
 #[derive(Error, Debug)]
 pub enum HttpClientError {
@@ -56,7 +58,7 @@ static REDIRECT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?m)<script>\s+window.location ?= ?['"]index.php['"];?\s+</script>"#).unwrap()
 });
 
-#[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Copy, Clone, Serialize, Deserialize)]
 pub enum Division {
     Bronze,
     Silver,

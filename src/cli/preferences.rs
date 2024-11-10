@@ -133,7 +133,7 @@ pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiPro
                 }
             }
             let status = StatusSpinner::new("Saving...", &multi);
-            prefs.save().await?;
+            prefs.save_prefs().await?;
             status.finish("Saved", true);
         },
         None => {

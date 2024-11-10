@@ -1,10 +1,11 @@
 use std::sync::LazyLock;
 use scraper::{Html, Selector, ElementRef, Node};
+use serde::{Serialize, Deserialize};
 use regex::{Regex, Captures};
 use console::style;
 use super::{Result, REDIRECT_RE, HttpClientError, HttpClient, IntoResult, Division};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Problem {
     pub name: String,
     pub id: u64,
@@ -22,13 +23,13 @@ pub struct Problem {
     pub output: IoMode
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TestCase {
     input: String,
     output: String
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum IoMode {
     Stdio,
     File(String)
