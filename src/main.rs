@@ -1,7 +1,7 @@
+mod cli;
 mod credential_storage;
 mod http_client;
 mod preferences;
-mod cli;
 
 use std::process::ExitCode;
 

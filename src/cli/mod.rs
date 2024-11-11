@@ -1,30 +1,39 @@
-mod status_spinner;
 mod auth;
 mod preferences;
 mod problem;
 mod solution;
+mod status_spinner;
 
-use thiserror::Error;
+use crate::{
+    credential_storage::{CredentialStorageError, CredentialStorageSecretService},
+    http_client::{HttpClient, HttpClientError},
+    preferences::{DataStore, PreferencesError},
+};
 use clap::{CommandFactory, Parser, Subcommand};
-use clap_complete::{Shell, generate};
-use log::{LevelFilter, error};
-use indicatif_log_bridge::LogWrapper;
+use clap_complete::{generate, Shell};
 use console::style;
 use indicatif::MultiProgress;
-use std::{io::stdout, process::ExitCode, sync::Arc};
-use crate::{credential_storage::{CredentialStorageError, CredentialStorageSecretService}, http_client::{HttpClient, HttpClientError}, preferences::{DataStore, PreferencesError}};
+use indicatif_log_bridge::LogWrapper;
+use log::{error, LevelFilter};
 use status_spinner::StatusSpinner;
+use std::{io::stdout, process::ExitCode, sync::Arc};
+use thiserror::Error;
 
 /// USACO command-line interface
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = "USACO command-line interface: supports viewing problem info, automatically testing solutions, and uploading solutions to USACO grading servers.", name = "usaco")]
+#[command(
+    version,
+    about,
+    long_about = "USACO command-line interface: supports viewing problem info, automatically testing solutions, and uploading solutions to USACO grading servers.",
+    name = "usaco"
+)]
 struct Args {
     /// Maximum logging level
     #[arg(short, long, value_enum)]
     log_level: Option<LevelFilter>,
-    
+
     #[command(subcommand)]
-    command: Command
+    command: Command,
 }
 
 #[derive(Subcommand, Debug)]
@@ -32,29 +41,27 @@ enum Command {
     /// Manage USACO account authentication
     Auth {
         #[command(subcommand)]
-        command: auth::Command
+        command: auth::Command,
     },
     /// View problem info
     Problem {
         #[command(subcommand)]
-        command: problem::Command
+        command: problem::Command,
     },
     /// Manage, test, and submit solutions
     Solution {
         #[command(subcommand)]
-        command: solution::Command
+        command: solution::Command,
     },
     /// Manage CLI preferences
     Preferences {
         #[command(subcommand)]
-        command: Option<preferences::Command>
+        command: Option<preferences::Command>,
     },
     /// Generate shell completion files
-    Completion {
-        shell: Shell
-    },
+    Completion { shell: Shell },
     /// Test connection to USACO servers
-    Ping
+    Ping,
 }
 
 #[derive(Error, Debug)]
@@ -68,7 +75,7 @@ pub enum CliError {
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Input error: {0}")]
-    InputError(#[from] dialoguer::Error)
+    InputError(#[from] dialoguer::Error),
 }
 
 type Result<T = ()> = std::result::Result<T, CliError>;
@@ -84,9 +91,7 @@ fn setup_logging() -> (MultiProgress, Args) {
     let multi = MultiProgress::new();
     let logger = logger.build();
     let log_filter = logger.filter();
-    LogWrapper::new(multi.clone(), logger)
-        .try_init()
-        .unwrap();
+    LogWrapper::new(multi.clone(), logger).try_init().unwrap();
     log::set_max_level(log_filter);
 
     (multi, args)
@@ -112,16 +117,16 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result {
             } else {
                 status.finish("Cannot connect to USACO servers", false);
             }
-        },
+        }
         Command::Completion { shell } => {
             let mut command = Args::command();
             let name = command.get_name().to_string();
             generate(shell, &mut command, name, &mut stdout());
-        },
+        }
         Command::Auth { command } => auth::handle(command, client, cred_storage, multi).await?,
         Command::Problem { command } => problem::handle(command, client, &prefs, multi).await?,
         Command::Solution { command } => solution::handle(command, client, &prefs, multi).await?,
-        Command::Preferences { command } => preferences::handle(command, &prefs, multi).await?
+        Command::Preferences { command } => preferences::handle(command, &prefs, multi).await?,
     }
 
     Ok(())

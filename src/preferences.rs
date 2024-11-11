@@ -1,12 +1,15 @@
-use serde::{Deserialize, Serialize};
-use tokio::fs::{read, write, try_exists, create_dir_all};
-use thiserror::Error;
-use std::{cell::{Ref, RefMut, RefCell}, path::PathBuf};
-use indexmap::IndexMap;
+use super::http_client::Problem;
 use clap::ValueEnum;
 use directories::ProjectDirs;
+use indexmap::IndexMap;
 use log::debug;
-use super::http_client::Problem;
+use serde::{Deserialize, Serialize};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    path::PathBuf,
+};
+use thiserror::Error;
+use tokio::fs::{create_dir_all, read, try_exists, write};
 
 const PREF_FILE_NAME: &'static str = "config.json";
 const CACHE_FILE_NAME: &'static str = "problem-cache.json";
@@ -18,7 +21,7 @@ pub enum PreferencesError {
     #[error("I/O error: {0}")]
     IOError(#[from] std::io::Error),
     #[error("Preferences locked")]
-    PrefsLocked
+    PrefsLocked,
 }
 
 type Result<T> = std::result::Result<T, PreferencesError>;
@@ -27,7 +30,7 @@ type Result<T> = std::result::Result<T, PreferencesError>;
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum CPPCompiler {
     GCC = 0,
-    Clang = 1
+    Clang = 1,
 }
 
 impl Default for CPPCompiler {
@@ -40,7 +43,7 @@ impl Default for CPPCompiler {
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Language {
     CPP = 0,
-    Python = 1
+    Python = 1,
 }
 
 impl Default for Language {
@@ -53,7 +56,7 @@ impl Language {
     pub fn to_str(&self) -> &'static str {
         match self {
             Self::CPP => "cpp",
-            Self::Python => "python"
+            Self::Python => "python",
         }
     }
 }
@@ -67,7 +70,7 @@ pub struct Preferences {
     #[serde(default)]
     pub preferred_language: Language,
     #[serde(default)]
-    pub solutions_dir: Option<PathBuf>
+    pub solutions_dir: Option<PathBuf>,
 }
 
 type ProblemCache = IndexMap<u64, Problem>;
@@ -76,7 +79,7 @@ type ProblemCache = IndexMap<u64, Problem>;
 pub struct DataStore {
     preferences: RefCell<Preferences>,
     dirs: ProjectDirs,
-    problem_cache: RefCell<ProblemCache>
+    problem_cache: RefCell<ProblemCache>,
 }
 
 impl DataStore {
@@ -93,7 +96,7 @@ impl DataStore {
             RefCell::new(serde_json::from_slice(&read(config_path).await?)?)
         } else {
             debug!("Creating preferences at {}", config_path.display());
-            
+
             // create in user config dir
             create_dir_all(dirs.config_dir()).await?;
             write(&config_path, "{}").await?;
@@ -112,7 +115,7 @@ impl DataStore {
         Ok(Self {
             preferences,
             dirs,
-            problem_cache
+            problem_cache,
         })
     }
 
@@ -126,11 +129,15 @@ impl DataStore {
     }
 
     pub fn read(&self) -> Result<Ref<'_, Preferences>> {
-        self.preferences.try_borrow().map_err(|_| PreferencesError::PrefsLocked)
+        self.preferences
+            .try_borrow()
+            .map_err(|_| PreferencesError::PrefsLocked)
     }
 
     pub fn write(&self) -> Result<RefMut<'_, Preferences>> {
-        self.preferences.try_borrow_mut().map_err(|_| PreferencesError::PrefsLocked)
+        self.preferences
+            .try_borrow_mut()
+            .map_err(|_| PreferencesError::PrefsLocked)
     }
 
     /// uses an existing borrowed problem cache for efficiency
@@ -144,7 +151,10 @@ impl DataStore {
 
     /// insert a problem into the LRU cache
     pub async fn get_cache(&self, id: u64) -> Result<Option<Ref<Problem>>> {
-        let mut lock = self.problem_cache.try_borrow_mut().map_err(|_| PreferencesError::PrefsLocked)?;
+        let mut lock = self
+            .problem_cache
+            .try_borrow_mut()
+            .map_err(|_| PreferencesError::PrefsLocked)?;
         if let Some(idx) = lock.get_index_of(&id) {
             // move to position 0
             lock.move_index(idx, 0);
@@ -162,12 +172,17 @@ impl DataStore {
 
     /// get the entire cache
     pub fn get_full_cache(&self) -> Result<Ref<ProblemCache>> {
-        self.problem_cache.try_borrow().map_err(|_| PreferencesError::PrefsLocked)
+        self.problem_cache
+            .try_borrow()
+            .map_err(|_| PreferencesError::PrefsLocked)
     }
 
     /// insert a problem into the LRU cache
     pub async fn insert_cache(&self, problem: Problem) -> Result<()> {
-        let mut lock = self.problem_cache.try_borrow_mut().map_err(|_| PreferencesError::PrefsLocked)?;
+        let mut lock = self
+            .problem_cache
+            .try_borrow_mut()
+            .map_err(|_| PreferencesError::PrefsLocked)?;
         lock.insert_before(0, problem.id, problem);
         // remove old items
         while lock.len() > 10 {
@@ -179,11 +194,16 @@ impl DataStore {
 
     /// remove items from the cache
     pub async fn remove_cache(&self, items: Vec<u64>) -> Result<usize> {
-        let mut lock = self.problem_cache.try_borrow_mut().map_err(|_| PreferencesError::PrefsLocked)?;
+        let mut lock = self
+            .problem_cache
+            .try_borrow_mut()
+            .map_err(|_| PreferencesError::PrefsLocked)?;
         let count = if items.len() > 0 {
             let mut i = 0;
             for id in &items {
-                if lock.shift_remove(id).is_some() { i += 1; }
+                if lock.shift_remove(id).is_some() {
+                    i += 1;
+                }
             }
             i
         } else {

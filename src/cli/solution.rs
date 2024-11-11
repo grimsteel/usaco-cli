@@ -1,10 +1,16 @@
+use super::{problem::get_problem, status_spinner::StatusSpinner};
+use crate::{
+    http_client::{Division, HttpClient},
+    preferences::DataStore,
+};
 use clap::Subcommand;
 use console::style;
 use indicatif::MultiProgress;
-use tokio::{process::Command as ProcessCommand, fs::{create_dir_all, try_exists, write}};
 use log::{info, warn};
-use super::{status_spinner::StatusSpinner, problem::get_problem};
-use crate::{http_client::{HttpClient, Division}, preferences::DataStore};
+use tokio::{
+    fs::{create_dir_all, try_exists, write},
+    process::Command as ProcessCommand,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
@@ -12,22 +18,27 @@ pub enum Command {
     Scaffold {
         /// Do not create a git repository
         #[arg(short, long)]
-        no_git: bool
+        no_git: bool,
     },
     /// Bootstrap an initial solution file
     Create {
-        /// Problem ID. Will prompt 
-        problem_id: Option<u64>
-    }
+        /// Problem ID. Will prompt
+        problem_id: Option<u64>,
+    },
 }
 
-pub async fn handle(command: Command, client: HttpClient, store: &DataStore, multi: MultiProgress) -> super::Result {
+pub async fn handle(
+    command: Command,
+    client: HttpClient,
+    store: &DataStore,
+    multi: MultiProgress,
+) -> super::Result {
     let lock = store.read()?;
     if let Some(dir) = &lock.solutions_dir {
         match command {
-            Command::Scaffold { no_git } => {                
+            Command::Scaffold { no_git } => {
                 let status = StatusSpinner::new("Scaffolding solutions directory...", &multi);
-                
+
                 // Create the src and bin dirs
                 let mut src_dir = dir.join("src");
                 let bin_dir = dir.join("bin");
@@ -41,10 +52,7 @@ pub async fn handle(command: Command, client: HttpClient, store: &DataStore, mul
                 }
 
                 if !no_git {
-                    let output = ProcessCommand::new("git")
-                        .arg("init")
-                        .output()
-                        .await?;
+                    let output = ProcessCommand::new("git").arg("init").output().await?;
 
                     info!("Git: {}", String::from_utf8_lossy(&output.stdout));
 
@@ -56,8 +64,7 @@ pub async fn handle(command: Command, client: HttpClient, store: &DataStore, mul
                 }
 
                 status.finish("Scaffolded successfully!", true);
-
-            },
+            }
             Command::Create { problem_id } => {
                 let lang_str = lock.preferred_language.to_str();
                 get_problem(problem_id, &client, store, &multi, |problem| async move {
@@ -67,20 +74,28 @@ pub async fn handle(command: Command, client: HttpClient, store: &DataStore, mul
                     create_dir_all(&problem_dir).await?;
                     problem_dir.push(filename);
                     if try_exists(&problem_dir).await? {
-                        warn!("Solution file {} already exists; skipping", problem_dir.display());
+                        warn!(
+                            "Solution file {} already exists; skipping",
+                            problem_dir.display()
+                        );
                     } else {
-                        
                     }
                     Ok(())
-                }).await?;
+                })
+                .await?;
             }
         }
     } else {
         // prompt user to setup solutions dir
-        println!("{}", style("The solutions directory is not set!").bold().red());
+        println!(
+            "{}",
+            style("The solutions directory is not set!").bold().red()
+        );
         println!(
             "Run {} to configure it.",
-            style("`usaco preferences set solutions-directory`").yellow().italic()
+            style("`usaco preferences set solutions-directory`")
+                .yellow()
+                .italic()
         );
     }
 

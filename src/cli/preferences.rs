@@ -1,10 +1,13 @@
+use crate::{
+    cli::status_spinner::StatusSpinner,
+    preferences::{CPPCompiler, DataStore, Language},
+};
 use clap::{Subcommand, ValueEnum};
-use dialoguer::{Input, Select, theme::ColorfulTheme};
+use console::{strip_ansi_codes, style, user_attended};
+use dialoguer::{theme::ColorfulTheme, Input, Select};
 use indicatif::MultiProgress;
-use console::{user_attended, style, strip_ansi_codes};
+use std::{borrow::Cow, env::current_dir, path::PathBuf};
 use tokio::fs::canonicalize;
-use crate::{preferences::{DataStore, Language, CPPCompiler}, cli::status_spinner::StatusSpinner};
-use std::{borrow::Cow, path::PathBuf, env::current_dir};
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
@@ -12,37 +15,35 @@ pub enum Command {
     Get {
         /// Preference key to retrieve
         #[arg(value_enum)]
-        key: PrefKey
+        key: PrefKey,
     },
     /// Set a preference key. Will prompt for value
     Set {
         /// Preference key to set
         #[command(subcommand)]
-        key: SetValues
-    }
+        key: SetValues,
+    },
 }
 
 #[derive(Subcommand, Debug)]
 pub enum SetValues {
     /// Default problem ID for problem and solution commands
-    CurrentProblem {
-        value: Option<u64>
-    },
+    CurrentProblem { value: Option<u64> },
     /// Preferred language for boilerplate code
     PreferredLanguage {
         #[arg(value_enum)]
-        value: Option<Language>
+        value: Option<Language>,
     },
     /// Preferred C++ compiler
     CPPCompiler {
         #[arg(value_enum)]
-        value: Option<CPPCompiler>
+        value: Option<CPPCompiler>,
     },
     /// Directory to hold solutions in
     SolutionsDirectory {
         #[arg(value_enum)]
-        value: Option<PathBuf>
-    }
+        value: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -54,62 +55,81 @@ pub enum PrefKey {
     /// Preferred C++ compiler
     CPPCompiler,
     /// Directory to hold solutions in
-    SolutionsDirectory
+    SolutionsDirectory,
 }
 
-pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiProgress) -> super::Result {
+pub async fn handle(
+    command: Option<Command>,
+    prefs: &DataStore,
+    multi: MultiProgress,
+) -> super::Result {
     match command {
         Some(Command::Get { key }) => {
             let lock = prefs.read()?;
             let value = match key {
-                PrefKey::CurrentProblem => lock.current_problem
+                PrefKey::CurrentProblem => lock
+                    .current_problem
                     .map(|s| style(Cow::Owned(s.to_string())).cyan())
                     // orange if no problem set
                     .unwrap_or_else(|| style(Cow::Borrowed("Not Set")).color256(215)),
                 PrefKey::PreferredLanguage => match lock.preferred_language {
                     Language::CPP => style(Cow::Borrowed("C++")).blue(),
-                    Language::Python => style(Cow::Borrowed("Python")).yellow()
+                    Language::Python => style(Cow::Borrowed("Python")).yellow(),
                 },
                 PrefKey::CPPCompiler => style(match lock.cpp_compiler {
                     CPPCompiler::GCC => Cow::Borrowed("g++"),
-                    CPPCompiler::Clang => Cow::Borrowed("clang")
-                }).magenta(),
+                    CPPCompiler::Clang => Cow::Borrowed("clang"),
+                })
+                .magenta(),
                 PrefKey::SolutionsDirectory => match lock.solutions_dir.as_ref() {
                     Some(dir) => style(dir.to_string_lossy()).blue(),
-                    None => style(Cow::Borrowed("Not set")).red()
-                }.bright().bold()
-            }.bright().bold().to_string();
+                    None => style(Cow::Borrowed("Not set")).red(),
+                }
+                .bright()
+                .bold(),
+            }
+            .bright()
+            .bold()
+            .to_string();
             if user_attended() {
-                println!("{} {}", style(match key {
-                    PrefKey::CurrentProblem => "Current problem:",
-                    PrefKey::PreferredLanguage => "Preferred language:",
-                    PrefKey::CPPCompiler => "C++ compiler:",
-                    PrefKey::SolutionsDirectory => "Solutions directory:"
-                }).dim(), value);
+                println!(
+                    "{} {}",
+                    style(match key {
+                        PrefKey::CurrentProblem => "Current problem:",
+                        PrefKey::PreferredLanguage => "Preferred language:",
+                        PrefKey::CPPCompiler => "C++ compiler:",
+                        PrefKey::SolutionsDirectory => "Solutions directory:",
+                    })
+                    .dim(),
+                    value
+                );
             } else {
                 // just print the value without formatting
                 println!("{}", strip_ansi_codes(&value));
             }
-        },
-        Some(Command::Set { key }) =>{
+        }
+        Some(Command::Set { key }) => {
             {
                 let mut lock = prefs.write()?;
                 match key {
                     // prompt for corresponding value (if needed)
                     SetValues::CurrentProblem { value } => {
-                        let input = if let Some(value) = value { value } else {
+                        let input = if let Some(value) = value {
+                            value
+                        } else {
                             Input::with_theme(&ColorfulTheme::default())
                                 .with_prompt("Enter a problem ID")
-                                .validate_with(|input: &String| {
-                                    input.parse::<u64>().map(|_| ())
-                                })
+                                .validate_with(|input: &String| input.parse::<u64>().map(|_| ()))
                                 .interact_text()?
-                                .parse::<u64>().unwrap()
+                                .parse::<u64>()
+                                .unwrap()
                         };
                         lock.current_problem = Some(input);
-                    },
+                    }
                     SetValues::PreferredLanguage { value } => {
-                        let input = if let Some(value) = value { value } else {
+                        let input = if let Some(value) = value {
+                            value
+                        } else {
                             let result = Select::with_theme(&ColorfulTheme::default())
                                 .with_prompt("Select a language")
                                 .items(&["C++", "Python"])
@@ -120,14 +140,16 @@ pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiPro
                             match result {
                                 0 => Language::CPP,
                                 1 => Language::Python,
-                                _ => unreachable!()
+                                _ => unreachable!(),
                             }
                         };
 
                         lock.preferred_language = input;
-                    },
+                    }
                     SetValues::CPPCompiler { value } => {
-                        let input = if let Some(value) = value { value } else {
+                        let input = if let Some(value) = value {
+                            value
+                        } else {
                             let result = Select::with_theme(&ColorfulTheme::default())
                                 .with_prompt("Select a C++ compiler")
                                 .items(&["g++", "clang"])
@@ -137,12 +159,12 @@ pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiPro
                             match result {
                                 0 => CPPCompiler::GCC,
                                 1 => CPPCompiler::Clang,
-                                _ => unreachable!()
+                                _ => unreachable!(),
                             }
                         };
 
-                        lock.cpp_compiler = input; 
-                    },
+                        lock.cpp_compiler = input;
+                    }
                     SetValues::SolutionsDirectory { value } => {
                         let input = if let Some(value) = value {
                             canonicalize(value).await?
@@ -158,22 +180,20 @@ pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiPro
                             {
                                 prompt = prompt.default(cwd);
                             }
-                            
-                            let result = canonicalize(
-                                prompt.interact_text()?
-                            ).await?;
+
+                            let result = canonicalize(prompt.interact_text()?).await?;
 
                             result
                         };
 
-                        lock.solutions_dir = Some(input); 
+                        lock.solutions_dir = Some(input);
                     }
                 }
             }
             let status = StatusSpinner::new("Saving...", &multi);
             prefs.save_prefs().await?;
             status.finish("Saved", true);
-        },
+        }
         None => {
             // list all values
             let lock = prefs.read()?;
@@ -184,7 +204,10 @@ pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiPro
                 if let Some(cp) = lock.current_problem {
                     style(Cow::Owned(cp.to_string())).bright().cyan().bold()
                 } else {
-                    style(Cow::Borrowed("Not set")).bright().color256(215).bold()
+                    style(Cow::Borrowed("Not set"))
+                        .bright()
+                        .color256(215)
+                        .bold()
                 }
             );
             println!(
@@ -192,16 +215,22 @@ pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiPro
                 style("Preferred language:").dim(),
                 style(match lock.preferred_language {
                     Language::CPP => "C++",
-                    Language::Python => "Python"
-                }).bright().yellow().bold(),
+                    Language::Python => "Python",
+                })
+                .bright()
+                .yellow()
+                .bold(),
             );
             println!(
                 "{} {}",
                 style("C++ compiler:").dim(),
                 style(match lock.cpp_compiler {
                     CPPCompiler::GCC => "g++",
-                    CPPCompiler::Clang => "clang"
-                }).bright().magenta().bold(),
+                    CPPCompiler::Clang => "clang",
+                })
+                .bright()
+                .magenta()
+                .bold(),
             );
             println!(
                 "{} {}",

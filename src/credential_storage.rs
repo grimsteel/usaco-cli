@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use log::debug;
 #[cfg(unix)]
 use secret_service::{Collection, EncryptionType, Item, SecretService};
 use thiserror::Error;
-use log::debug;
 
 pub struct UsacoCredentials {
     pub username: String,
     pub password: String,
-    pub session_id: String
+    pub session_id: String,
 }
 
 #[derive(Error, Debug)]
@@ -20,7 +20,7 @@ pub enum CredentialStorageError {
     #[error("password is not valid UTF-8")]
     InvalidPassword,
     #[error("missing username in secret item")]
-    MissingUsername
+    MissingUsername,
 }
 
 type Result<T> = std::result::Result<T, CredentialStorageError>;
@@ -45,9 +45,7 @@ pub struct CredentialStorageSecretService {
 impl CredentialStorageSecretService {
     pub async fn init() -> Result<Self> {
         let session = SecretService::connect(EncryptionType::Plain).await?;
-        Ok(Self {
-            session
-        })
+        Ok(Self { session })
     }
 
     async fn get_collection<'a>(&'a self) -> Result<Collection<'a>> {
@@ -59,7 +57,6 @@ impl CredentialStorageSecretService {
         // get first result
         Ok(collection.search_items(attrs).await?.into_iter().next())
     }
-
 }
 
 #[async_trait(?Send)]
@@ -73,17 +70,24 @@ impl CredentialStorage for CredentialStorageSecretService {
         // parse this item
         Ok(if let Some(result) = result {
             let mut result_attrs = result.get_attributes().await?;
-            let username = result_attrs.remove("username")
+            let username = result_attrs
+                .remove("username")
                 .ok_or(CredentialStorageError::MissingUsername)?;
             let secret = String::from_utf8(result.get_secret().await?)
                 .map_err(|_| CredentialStorageError::InvalidPassword)?;
 
-            let split_point = secret.find(':').ok_or(CredentialStorageError::InvalidPassword)?;
+            let split_point = secret
+                .find(':')
+                .ok_or(CredentialStorageError::InvalidPassword)?;
 
             let session_id = &secret[..split_point];
             let password = &secret[split_point + 1..];
 
-            Some(UsacoCredentials { username, password: password.into(), session_id: session_id.into() })
+            Some(UsacoCredentials {
+                username,
+                password: password.into(),
+                session_id: session_id.into(),
+            })
         } else {
             None
         })
@@ -93,7 +97,9 @@ impl CredentialStorage for CredentialStorageSecretService {
         let coll = self.get_collection().await?;
         let result = self.get_item(&coll).await?;
 
-        if let Some(result) = result { result.delete().await?; }
+        if let Some(result) = result {
+            result.delete().await?;
+        }
 
         Ok(())
     }
@@ -101,22 +107,24 @@ impl CredentialStorage for CredentialStorageSecretService {
     async fn store_credentials(&self, creds: &UsacoCredentials) -> Result<()> {
         debug!("saving credentials");
         let coll = self.get_collection().await?;
-        
-        let attrs = HashMap::from([
-            ("service", "usaco.org"),
-            ("username", &creds.username)
-        ]);
+
+        let attrs = HashMap::from([("service", "usaco.org"), ("username", &creds.username)]);
 
         // add this item to the secret store
         coll.create_item(
             &format!("Credentials for '{}' on 'usaco.org'", &creds.username),
             attrs,
-            &[creds.session_id.as_bytes(), &[0x3a], creds.password.as_bytes()].concat(),
+            &[
+                creds.session_id.as_bytes(),
+                &[0x3a],
+                creds.password.as_bytes(),
+            ]
+            .concat(),
             true,
-            "text/plain"
-        ).await?;
+            "text/plain",
+        )
+        .await?;
 
         Ok(())
     }
 }
-

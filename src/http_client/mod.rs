@@ -2,12 +2,15 @@ mod account;
 mod problem;
 //mod solution;
 
-use std::{sync::{Arc, LazyLock}, time::Instant};
+use std::{
+    sync::{Arc, LazyLock},
+    time::Instant,
+};
 
 use regex::Regex;
 use reqwest::{Client, StatusCode};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use serde::{Serialize, Deserialize};
 
 use crate::credential_storage::{CredentialStorage, CredentialStorageError};
 
@@ -23,7 +26,7 @@ pub enum HttpClientError {
 
     #[error("You are not currently logged in")]
     LoggedOut,
-    
+
     #[error("Session expired")]
     SessionExpired,
     #[error("Invalid username or password!")]
@@ -33,13 +36,16 @@ pub enum HttpClientError {
     ProblemNotFound,
 
     #[error("Unexpected or malformed response from USACO backend: {0}")]
-    UnexpectedResponse(&'static str)
+    UnexpectedResponse(&'static str),
 }
 
 type Result<T> = std::result::Result<T, HttpClientError>;
 
 trait IntoResult<T> {
-    fn ir(self) -> Result<T> where Self: Sized {
+    fn ir(self) -> Result<T>
+    where
+        Self: Sized,
+    {
         self.ir_msg("missing field")
     }
     fn ir_msg(self, msg: &'static str) -> Result<T>;
@@ -49,7 +55,7 @@ impl<T> IntoResult<T> for Option<T> {
     fn ir_msg(self, msg: &'static str) -> Result<T> {
         match self {
             Self::Some(v) => Ok(v),
-            None => Err(HttpClientError::UnexpectedResponse(msg))
+            None => Err(HttpClientError::UnexpectedResponse(msg)),
         }
     }
 }
@@ -63,7 +69,7 @@ pub enum Division {
     Bronze,
     Silver,
     Gold,
-    Platinum
+    Platinum,
 }
 
 impl Division {
@@ -73,7 +79,7 @@ impl Division {
             "silver" => Some(Self::Silver),
             "gold" => Some(Self::Gold),
             "platinum" => Some(Self::Platinum),
-            _ => None
+            _ => None,
         }
     }
     pub fn to_str(&self) -> &'static str {
@@ -81,7 +87,7 @@ impl Division {
             Self::Bronze => "bronze",
             Self::Silver => "silver",
             Self::Gold => "gold",
-            Self::Platinum => "platinum"
+            Self::Platinum => "platinum",
         }
     }
     /// Color the division with the division colors
@@ -90,7 +96,7 @@ impl Division {
             Self::Gold => ("Gold", "246;221;138"),
             Self::Silver => ("Silver", "199;199;199"),
             Self::Bronze => ("Bronze", "232;175;140"),
-            Self::Platinum => ("Platinum", "207;211;180")
+            Self::Platinum => ("Platinum", "207;211;180"),
         };
 
         format!("\x1b[38;2;{}m{}\x1b[0m", div_format.1, div_format.0)
@@ -103,7 +109,7 @@ impl Division {
 
 pub struct HttpClient {
     cred_storage: Arc<dyn CredentialStorage>,
-    client: Client
+    client: Client,
 }
 
 impl HttpClient {
@@ -111,18 +117,19 @@ impl HttpClient {
         let client = Client::new();
         Self {
             client,
-            cred_storage
+            cred_storage,
         }
     }
 
     /// test and time connection to usaco.org
     pub async fn ping(&self) -> Result<Option<u128>> {
         let start = Instant::now();
-        let res = self.client
-            .get("https://usaco.org")
-            .send()
-            .await?;
+        let res = self.client.get("https://usaco.org").send().await?;
         let time = start.elapsed().as_millis();
-        Ok(if res.status() == StatusCode::OK { Some(time) } else { None })
+        Ok(if res.status() == StatusCode::OK {
+            Some(time)
+        } else {
+            None
+        })
     }
 }
