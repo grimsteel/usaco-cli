@@ -65,14 +65,14 @@ fn print_problem(problem: &Problem) {
 
 pub async fn get_problem<
     'a,
-    T: FnMut(Problem) -> R,
+    T: FnOnce(Problem) -> R,
     R: Future<Output = super::Result> + Send + Sync + 'a,
 >(
     id_param: Option<u64>,
     client: &HttpClient,
     store: &'a DataStore,
     multi: &MultiProgress,
-    mut cb: T,
+    cb: T,
 ) -> super::Result {
     let id = if let Some(id) = id_param {
         id

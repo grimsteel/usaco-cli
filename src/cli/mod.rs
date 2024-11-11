@@ -12,11 +12,12 @@ use crate::{
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use console::style;
+use env_logger::Env;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
 use log::{error, LevelFilter};
 use status_spinner::StatusSpinner;
-use std::{io::stdout, process::ExitCode, sync::Arc};
+use std::{io::{stdout, Write}, process::ExitCode, sync::Arc};
 use thiserror::Error;
 
 /// USACO command-line interface
@@ -81,7 +82,14 @@ pub enum CliError {
 type Result<T = ()> = std::result::Result<T, CliError>;
 
 fn setup_logging() -> (MultiProgress, Args) {
-    let mut logger = env_logger::Builder::from_default_env();
+    let mut logger = env_logger::Builder::from_env(
+        Env::default().default_filter_or("info")
+    );
+    // set style
+    logger.format(|buf, record| {
+        writeln!(buf, "{0}{1}{0:#}: {2}", buf.default_level_style(record.level()).bold(), record.level(), record.args())
+    });
+    
     let args = Args::parse();
 
     if let Some(level) = args.log_level {

@@ -78,7 +78,7 @@ type ProblemCache = IndexMap<u64, Problem>;
 #[derive(Debug)]
 pub struct DataStore {
     preferences: RefCell<Preferences>,
-    dirs: ProjectDirs,
+    pub dirs: ProjectDirs,
     problem_cache: RefCell<ProblemCache>,
 }
 

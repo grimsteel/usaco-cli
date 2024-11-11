@@ -25,11 +25,11 @@ pub struct Problem {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TestCase {
-    input: String,
-    output: String,
+    pub input: String,
+    pub output: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum IoMode {
     Stdio,
     File(String),
