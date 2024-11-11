@@ -1,5 +1,5 @@
 use clap::Subcommand;
-use std::{sync::Arc, error::Error};
+use std::sync::Arc;
 use console::style;
 use dialoguer::{Input, theme::ColorfulTheme, Password};
 use indicatif::MultiProgress;
@@ -20,7 +20,7 @@ pub enum Command {
     Whoami
 }
 
-pub async fn handle(command: Command, client: HttpClient, cred_storage: Arc<dyn CredentialStorage>, multi: MultiProgress) -> Result<(), Box<dyn Error>> {
+pub async fn handle(command: Command, client: HttpClient, cred_storage: Arc<dyn CredentialStorage>, multi: MultiProgress) -> super::Result {
     match command {
         Command::Logout => {
             let status = StatusSpinner::new("Logging out...", &multi);

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tokio::fs::{read, write, try_exists, create_dir_all};
 use thiserror::Error;
-use std::cell::{Ref, RefMut, RefCell};
+use std::{cell::{Ref, RefMut, RefCell}, path::PathBuf};
 use indexmap::IndexMap;
 use clap::ValueEnum;
 use directories::ProjectDirs;
@@ -49,6 +49,15 @@ impl Default for Language {
     }
 }
 
+impl Language {
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::CPP => "cpp",
+            Self::Python => "python"
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Preferences {
     #[serde(default)]
@@ -56,7 +65,9 @@ pub struct Preferences {
     #[serde(default)]
     pub cpp_compiler: CPPCompiler,
     #[serde(default)]
-    pub preferred_language: Language
+    pub preferred_language: Language,
+    #[serde(default)]
+    pub solutions_dir: Option<PathBuf>
 }
 
 type ProblemCache = IndexMap<u64, Problem>;

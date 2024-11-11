@@ -2,15 +2,17 @@ mod status_spinner;
 mod auth;
 mod preferences;
 mod problem;
+mod solution;
 
-use clap::{Parser, Subcommand, CommandFactory};
+use thiserror::Error;
+use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 use log::{LevelFilter, error};
 use indicatif_log_bridge::LogWrapper;
 use console::style;
 use indicatif::MultiProgress;
-use std::{sync::Arc, error::Error, io::stdout, process::ExitCode};
-use crate::{http_client::HttpClient, credential_storage::CredentialStorageSecretService, preferences::DataStore};
+use std::{io::stdout, process::ExitCode, sync::Arc};
+use crate::{credential_storage::{CredentialStorageError, CredentialStorageSecretService}, http_client::{HttpClient, HttpClientError}, preferences::{DataStore, PreferencesError}};
 use status_spinner::StatusSpinner;
 
 /// USACO command-line interface
@@ -37,6 +39,11 @@ enum Command {
         #[command(subcommand)]
         command: problem::Command
     },
+    /// Manage, test, and submit solutions
+    Solution {
+        #[command(subcommand)]
+        command: solution::Command
+    },
     /// Manage CLI preferences
     Preferences {
         #[command(subcommand)]
@@ -49,6 +56,22 @@ enum Command {
     /// Test connection to USACO servers
     Ping
 }
+
+#[derive(Error, Debug)]
+pub enum CliError {
+    #[error("Preferences store error: {0}")]
+    PreferencesError(#[from] PreferencesError),
+    #[error("API error: {0}")]
+    ApiError(#[from] HttpClientError),
+    #[error("Credential storage error: {0}")]
+    CredentialStorageError(#[from] CredentialStorageError),
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Input error: {0}")]
+    InputError(#[from] dialoguer::Error)
+}
+
+type Result<T = ()> = std::result::Result<T, CliError>;
 
 fn setup_logging() -> (MultiProgress, Args) {
     let mut logger = env_logger::Builder::from_default_env();
@@ -69,7 +92,7 @@ fn setup_logging() -> (MultiProgress, Args) {
     (multi, args)
 }
 
-async fn run_internal(multi: MultiProgress, args: Args) -> Result<(), Box<dyn Error>> {
+async fn run_internal(multi: MultiProgress, args: Args) -> Result {
     let cred_storage = Arc::new(CredentialStorageSecretService::init().await?);
     let client = HttpClient::init(cred_storage.clone());
     let prefs = DataStore::new().await?;
@@ -97,6 +120,7 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result<(), Box<dyn Er
         },
         Command::Auth { command } => auth::handle(command, client, cred_storage, multi).await?,
         Command::Problem { command } => problem::handle(command, client, &prefs, multi).await?,
+        Command::Solution { command } => solution::handle(command, client, &prefs, multi).await?,
         Command::Preferences { command } => preferences::handle(command, &prefs, multi).await?
     }
 

@@ -1,5 +1,5 @@
 use clap::Subcommand;
-use std::{error::Error, process::Stdio};
+use std::{process::Stdio, future::Future};
 use console::{style, Color};
 use dialoguer::{Input, theme::ColorfulTheme};
 use indicatif::MultiProgress;
@@ -41,15 +41,7 @@ pub enum CacheCommand {
     }
 }
 
-fn print_problem(problem: &Problem, status: &StatusSpinner) {
-    // Print problem header
-    status.finish(&format!(
-        "Loaded {}:",
-        style(format!("problem {}", problem.id))
-            .bold()
-            .bright()
-            .cyan()
-    ), true);
+fn print_problem(problem: &Problem) {
     // problem name
     println!("\n{}", style(&problem.name).bold().bright().underlined());
     // contest/division/number
@@ -65,40 +57,68 @@ fn print_problem(problem: &Problem, status: &StatusSpinner) {
     println!("{}", problem.description);
 }
 
-pub async fn handle(command: Command, client: HttpClient, store: &DataStore, multi: MultiProgress) -> Result<(), Box<dyn Error>> {
+pub async fn get_problem<'a, T: FnMut(Problem) -> R, R: Future<Output = super::Result> + Send + Sync + 'a>(id_param: Option<u64>, client: &HttpClient, store: &'a DataStore, multi: &MultiProgress, mut cb: T) -> super::Result {
+    let id = if let Some(id) = id_param {
+        id
+    } else if let Some(id) = store.read()?.current_problem {
+        // use current problem
+        id
+    } else {
+        // prompt
+        Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Problem ID:")
+            .interact_text()
+            .unwrap()
+    };
+    
+    let status = StatusSpinner::new("Loading problem...", &multi);
+
+    // check cache first
+    if let Some(cached_problem) = store.get_cache(id).await? {
+        // Print problem header
+        status.finish(&format!(
+            "Loaded {}",
+            style(format!("problem {}", cached_problem.id))
+                .bold()
+                .bright()
+                .cyan()
+        ), true);
+        
+        cb(cached_problem.clone()).await?;
+    } else {
+        match client.get_problem(id).await {
+            Ok(problem) => {
+                // Print problem header
+                status.finish(&format!(
+                    "Loaded {}",
+                    style(format!("problem {}", problem.id))
+                        .bold()
+                        .bright()
+                        .cyan()
+                ), true);
+
+                // insert into cache
+                store.insert_cache(problem.clone()).await?;
+                
+                cb(problem).await?;
+            },
+            Err(HttpClientError::ProblemNotFound) => {
+                status.finish(&format!("Problem {} not found", id), false);
+            },
+            Err(e) => Err(e)?
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn handle(command: Command, client: HttpClient, store: &DataStore, multi: MultiProgress) -> super::Result {
     match command {
         Command::Info { id } => {
-            let id = if let Some(id) = id {
-                id
-            } else if let Some(id) = store.read()?.current_problem {
-                // use current problem
-                id
-            } else {
-                // prompt
-                Input::with_theme(&ColorfulTheme::default())
-                    .with_prompt("Problem ID:")
-                    .interact_text()
-                    .unwrap()
-            };
-            
-            let status = StatusSpinner::new("Loading problem...", &multi);
-
-            if let Some(cached_problem) = store.get_cache(id).await? {
-                print_problem(&cached_problem, &status);
-            } else {
-                match client.get_problem(id).await {
-                    Ok(problem) => {
-                        print_problem(&problem, &status);
-                        
-                        // insert into cache
-                        store.insert_cache(problem).await?;
-                    },
-                    Err(HttpClientError::ProblemNotFound) => {
-                        status.finish(&format!("Problem {} not found", id), false);
-                    },
-                    Err(e) => Err(e)?
-                }
-            }
+            get_problem(id, &client, store, &multi, |problem| async move {
+                print_problem(&problem);
+                Ok(())
+            }).await?;
         },
         Command::Open { id, no_launch_browser } => {
             let id = if let Some(id) = id {

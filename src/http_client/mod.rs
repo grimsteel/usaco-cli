@@ -76,6 +76,14 @@ impl Division {
             _ => None
         }
     }
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::Bronze => "bronze",
+            Self::Silver => "silver",
+            Self::Gold => "gold",
+            Self::Platinum => "platinum"
+        }
+    }
     /// Color the division with the division colors
     pub fn to_ansi(&self) -> String {
         let div_format = match self {
@@ -86,6 +94,10 @@ impl Division {
         };
 
         format!("\x1b[38;2;{}m{}\x1b[0m", div_format.1, div_format.0)
+    }
+    /// Return all division names in lowercase
+    pub fn get_all() -> [&'static str; 4] {
+        ["bronze", "silver", "gold", "platinum"]
     }
 }
 

@@ -2,8 +2,9 @@ use clap::{Subcommand, ValueEnum};
 use dialoguer::{Input, Select, theme::ColorfulTheme};
 use indicatif::MultiProgress;
 use console::{user_attended, style, strip_ansi_codes};
+use tokio::fs::canonicalize;
 use crate::{preferences::{DataStore, Language, CPPCompiler}, cli::status_spinner::StatusSpinner};
-use std::{error::Error, borrow::Cow};
+use std::{borrow::Cow, path::PathBuf, env::current_dir};
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
@@ -36,6 +37,11 @@ pub enum SetValues {
     CPPCompiler {
         #[arg(value_enum)]
         value: Option<CPPCompiler>
+    },
+    /// Directory to hold solutions in
+    SolutionsDirectory {
+        #[arg(value_enum)]
+        value: Option<PathBuf>
     }
 }
 
@@ -46,10 +52,12 @@ pub enum PrefKey {
     /// Preferred language for boilerplate code
     PreferredLanguage,
     /// Preferred C++ compiler
-    CPPCompiler
+    CPPCompiler,
+    /// Directory to hold solutions in
+    SolutionsDirectory
 }
 
-pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiProgress) -> Result<(), Box<dyn Error>> {
+pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiProgress) -> super::Result {
     match command {
         Some(Command::Get { key }) => {
             let lock = prefs.read()?;
@@ -65,13 +73,18 @@ pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiPro
                 PrefKey::CPPCompiler => style(match lock.cpp_compiler {
                     CPPCompiler::GCC => Cow::Borrowed("g++"),
                     CPPCompiler::Clang => Cow::Borrowed("clang")
-                }).magenta()
+                }).magenta(),
+                PrefKey::SolutionsDirectory => match lock.solutions_dir.as_ref() {
+                    Some(dir) => style(dir.to_string_lossy()).blue(),
+                    None => style(Cow::Borrowed("Not set")).red()
+                }.bright().bold()
             }.bright().bold().to_string();
             if user_attended() {
                 println!("{} {}", style(match key {
                     PrefKey::CurrentProblem => "Current problem:",
                     PrefKey::PreferredLanguage => "Preferred language:",
-                    PrefKey::CPPCompiler => "C++ compiler:"
+                    PrefKey::CPPCompiler => "C++ compiler:",
+                    PrefKey::SolutionsDirectory => "Solutions directory:"
                 }).dim(), value);
             } else {
                 // just print the value without formatting
@@ -129,6 +142,31 @@ pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiPro
                         };
 
                         lock.cpp_compiler = input; 
+                    },
+                    SetValues::SolutionsDirectory { value } => {
+                        let input = if let Some(value) = value {
+                            canonicalize(value).await?
+                        } else {
+                            let theme = ColorfulTheme::default();
+                            let mut prompt = Input::<String>::with_theme(&theme)
+                                .with_prompt("Select a solutions directory");
+
+                            // set the default to the current dir
+                            if let Some(cwd) = current_dir()
+                                .ok()
+                                .and_then(|s| s.into_os_string().into_string().ok())
+                            {
+                                prompt = prompt.default(cwd);
+                            }
+                            
+                            let result = canonicalize(
+                                prompt.interact_text()?
+                            ).await?;
+
+                            result
+                        };
+
+                        lock.solutions_dir = Some(input); 
                     }
                 }
             }
@@ -164,6 +202,15 @@ pub async fn handle(command: Option<Command>, prefs: &DataStore, multi: MultiPro
                     CPPCompiler::GCC => "g++",
                     CPPCompiler::Clang => "clang"
                 }).bright().magenta().bold(),
+            );
+            println!(
+                "{} {}",
+                style("Solutions directory:").dim(),
+                if let Some(dir) = &lock.solutions_dir {
+                    style(dir.display()).blue().bright().bold().to_string()
+                } else {
+                    style("Not set").red().bright().bold().to_string()
+                }
             );
         }
     }

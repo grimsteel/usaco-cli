@@ -5,7 +5,7 @@ use regex::{Regex, Captures};
 use console::style;
 use super::{Result, REDIRECT_RE, HttpClientError, HttpClient, IntoResult, Division};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Problem {
     pub name: String,
     pub id: u64,
@@ -23,13 +23,13 @@ pub struct Problem {
     pub output: IoMode
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TestCase {
     input: String,
     output: String
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum IoMode {
     Stdio,
     File(String)
