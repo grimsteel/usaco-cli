@@ -15,7 +15,7 @@ use thiserror::Error;
 use crate::credential_storage::{CredentialStorage, CredentialStorageError};
 
 pub use account::UserInfo;
-pub use problem::Problem;
+pub use problem::{Problem, IoMode};
 
 #[derive(Error, Debug)]
 pub enum HttpClientError {

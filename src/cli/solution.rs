@@ -1,12 +1,13 @@
+use std::borrow::Cow;
 use super::{problem::get_problem, status_spinner::StatusSpinner};
 use crate::{
-    http_client::{Division, HttpClient},
-    preferences::DataStore,
+    http_client::{Division, HttpClient, IoMode},
+    preferences::{DataStore, Language},
 };
 use clap::Subcommand;
 use console::style;
 use indicatif::MultiProgress;
-use log::{info, warn};
+use log::info;
 use tokio::{
     fs::{create_dir_all, try_exists, write},
     process::Command as ProcessCommand,
@@ -66,19 +67,74 @@ pub async fn handle(
                 status.finish("Scaffolded successfully!", true);
             }
             Command::Create { problem_id } => {
-                let lang_str = lock.preferred_language.to_str();
+                let lang = lock.preferred_language;
                 get_problem(problem_id, &client, store, &multi, |problem| async move {
-                    let filename = format!("{}.{}", problem.id, lang_str);
-                    let mut problem_dir = dir.join(problem.division.to_str());
+                    let filename = format!("{}.{}", problem.id, lang.to_str());
+                    let mut problem_dir = dir.join("src").join(problem.division.to_str());
                     // make sure dir exists
                     create_dir_all(&problem_dir).await?;
                     problem_dir.push(filename);
                     if try_exists(&problem_dir).await? {
-                        warn!(
-                            "Solution file {} already exists; skipping",
-                            problem_dir.display()
+                        println!(
+                            "{} {} {}",
+                            style("Solution file").yellow(),
+                            style(problem_dir.display()).magenta().bold(),
+                            style("already exists; skipping").yellow()
                         );
                     } else {
+                        let code = match lang {
+                            Language::CPP => {
+                                format!(
+                                    r##"#include <bits/stdc++.h>
+using namespace std;
+
+int main() {{
+  ios::sync_with_stdio(false);
+  cin.tie(nullptr);
+{}{}
+  
+  return 0;
+}}"##,
+                                    match problem.input {
+                                        IoMode::Stdio => Cow::Borrowed(""),
+                                        IoMode::File(filename) => Cow::Owned(format!(r#"  freopen("{}", "r", stdin);
+"#, filename))
+                                    },
+                                    match problem.output {
+                                        IoMode::Stdio => Cow::Borrowed(""),
+                                        IoMode::File(filename) => Cow::Owned(format!(r#"  freopen("{}", "w", stdout);
+"#, filename))
+                                    },
+                                )
+                            },
+                            Language::Python => {
+                                format!(
+                                    r#"import sys
+
+{}{}
+
+"#,
+                                    match problem.input {
+                                        IoMode::Stdio => Cow::Borrowed(""),
+                                        IoMode::File(filename) => Cow::Owned(format!(r#"sys.stdin = open("{}", "r")
+"#, filename))
+                                    },
+                                    match problem.output {
+                                        IoMode::Stdio => Cow::Borrowed(""),
+                                        IoMode::File(filename) => Cow::Owned(format!(r#"sys.stdout = open("{}", "w")
+"#, filename))
+                                    },
+                                )
+                            }
+                        };
+                        write(&problem_dir, &code).await?;
+                        println!(
+                            "{} {} {} {}",
+                            style("Successfully bootstrapped").green(),
+                            style(format!("problem {}", problem.id)).bold().cyan(),
+                            style("at").green(),
+                            style(problem_dir.display()).yellow().bold(),
+                        );
                     }
                     Ok(())
                 })
