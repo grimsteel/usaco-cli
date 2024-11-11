@@ -2,6 +2,12 @@
 name = "usaco-cli"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-3.0-or-later"
+authors = ["grimsteel"]
+keywords = ["usaco"]
+categories = ["command-line-utilities"]
+repository = "https://github.com/grimsteel/usaco-cli"
+description = "Unofficial USACO cli: Supports automatic solution testing and submission"
 
 [dependencies]
 async-trait = "0.1.83"
