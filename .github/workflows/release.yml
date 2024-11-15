@@ -48,5 +48,5 @@ jobs:
         with:
           files: |
             usaco-x86_64-unknown-linux-gnu
-            usaco-x86_64-pc-windows-mscvc
+            usaco-x86_64-pc-windows-msvc
             usaco-aarch64-apple-darwin

@@ -47,13 +47,20 @@ pub trait CredentialStorage {
     fn is_secure(&self) -> bool;
 }
 
+#[cfg(target_os = "linux")]
+async fn get_secret_storage_provider() -> Option<Arc<dyn CredentialStorage>> {
+    CredentialStorageSecretService::init().await.ok().map(|s| Arc::new(s) as Arc<dyn CredentialStorage>)
+}
+#[cfg(not(target_os = "linux"))]
+async fn get_secret_storage_provider() -> Option<Arc<dyn CredentialStorage>> {
+    None
+}
+
 /// Automatically select a credential storage provider
 pub async fn autoselect_cred_storage(dirs: &ProjectDirs) -> Arc<dyn CredentialStorage> {
-    if cfg!(target_os = "linux") {
-        // try secret storage
-        if let Ok(provider) = CredentialStorageSecretService::init().await {
-            return Arc::new(provider);
-        }
+    // try secret storage
+    if let Some(provider) = get_secret_storage_provider().await {
+        return provider;
     }
 
     // if all else fails, use plaintext
