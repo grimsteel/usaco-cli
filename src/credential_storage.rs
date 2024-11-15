@@ -43,6 +43,8 @@ pub trait CredentialStorage {
     async fn logged_in(&self) -> Result<bool> {
         Ok(self.get_credentials().await?.is_some())
     }
+
+    fn is_secure(&self) -> bool;
 }
 
 /// Automatically select a credential storage provider
@@ -93,6 +95,7 @@ impl CredentialStorage for CredentialStoragePlaintext {
             None
         })
     }
+    fn is_secure(&self) -> bool { false }
 }
 
 
@@ -188,4 +191,6 @@ impl CredentialStorage for CredentialStorageSecretService {
 
         Ok(())
     }
+
+    fn is_secure(&self) -> bool { true }
 }

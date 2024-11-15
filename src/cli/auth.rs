@@ -61,6 +61,13 @@ pub async fn handle(
                 match client.login(user_id, password).await {
                     Ok(()) => {
                         status.finish("Successfully logged in.", true);
+                        if !cred_storage.is_secure() {
+                            println!(
+                                "{} {}",
+                                style("⚠ Warning:").yellow().bold(),
+                                style("Using an insecure credential storage backend.").yellow()
+                            );
+                        }
                     }
                     Err(HttpClientError::InvalidUsernamePassword) => {
                         status.finish("Invalid username or password.", false);

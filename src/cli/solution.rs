@@ -1,4 +1,4 @@
-use std::{borrow::Cow, process::{Stdio, ExitStatus}, os::unix::process::ExitStatusExt};
+use std::{borrow::Cow, process::{Stdio, ExitStatus}};
 use super::{problem::get_problem, status_spinner::StatusSpinner};
 use crate::{
     http_client::{Division, HttpClient, IoMode},
@@ -208,7 +208,7 @@ import sys
                             });
 
                             command.wait().await?
-                        } else { ExitStatus::from_raw(0) };
+                        } else { ExitStatus::default() };
 
                         if comp_status.code() == Some(0) {
                             status.finish("Finished compiling", true);
