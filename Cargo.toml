@@ -25,10 +25,10 @@ log = "0.4.22"
 regex = "1.11.1"
 reqwest = { version = "0.12.9", features = ["cookies", "json"] }
 scraper = "0.21.0"
-serde = "1.0.214"
+serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 thiserror = "1.0.66"
-tokio = { version = "1.41.0", features = ["rt", "rt-multi-thread", "macros", "sync", "fs", "net"] }
+tokio = { version = "1.41.0", features = ["rt", "rt-multi-thread", "macros", "sync", "fs", "net", "process"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 secret-service = { version = "4.0.0", features = ["rt-tokio-crypto-openssl"] }
