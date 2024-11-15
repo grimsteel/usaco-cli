@@ -1,11 +1,16 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use log::debug;
+use directories::ProjectDirs;
+use serde::{Serialize, Deserialize};
+use serde_json::{from_slice, to_vec};
+use tokio::fs::{read, write, try_exists, create_dir_all, remove_file};
 #[cfg(unix)]
 use secret_service::{Collection, EncryptionType, Item, SecretService};
 use thiserror::Error;
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UsacoCredentials {
     pub username: String,
     pub password: String,
@@ -15,12 +20,16 @@ pub struct UsacoCredentials {
 #[derive(Error, Debug)]
 pub enum CredentialStorageError {
     #[cfg(unix)]
-    #[error("secret service error")]
+    #[error("Secret service error: {0}")]
     SecretService(#[from] secret_service::Error),
-    #[error("password is not valid UTF-8")]
+    #[error("Password is not valid UTF-8")]
     InvalidPassword,
-    #[error("missing username in secret item")]
+    #[error("Missing username in secret item")]
     MissingUsername,
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Serialization error: {0}")]
+    SerdeError(#[from] serde_json::Error)
 }
 
 type Result<T> = std::result::Result<T, CredentialStorageError>;
@@ -36,6 +45,58 @@ pub trait CredentialStorage {
     }
 }
 
+/// Automatically select a credential storage provider
+pub async fn autoselect_cred_storage(dirs: &ProjectDirs) -> Arc<dyn CredentialStorage> {
+    if cfg!(target_os = "linux") {
+        // try secret storage
+        if let Ok(provider) = CredentialStorageSecretService::init().await {
+            return Arc::new(provider);
+        }
+    }
+
+    // if all else fails, use plaintext
+    Arc::new(CredentialStoragePlaintext::init(dirs))
+}
+
+/// Plaintext cred storage provider in the config folder
+pub struct CredentialStoragePlaintext {
+    filename: PathBuf
+}
+
+impl CredentialStoragePlaintext {
+    pub fn init(dirs: &ProjectDirs) -> Self {
+        let filename = dirs.config_dir().join("secrets.json");
+        Self {
+            filename
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl CredentialStorage for CredentialStoragePlaintext {
+    async fn store_credentials(&self, creds: &UsacoCredentials) -> Result<()> {
+        create_dir_all(self.filename.parent().unwrap()).await?;
+        write(&self.filename, to_vec(creds)?).await?;
+        Ok(())
+    }
+    async fn clear_credentials(&self) -> Result<()> {
+        if try_exists(&self.filename).await? {
+            remove_file(&self.filename).await?;
+        }
+        Ok(())
+    }
+    async fn get_credentials(&self) -> Result<Option<UsacoCredentials>> {
+        Ok(if try_exists(&self.filename).await? {
+            let contents = read(&self.filename).await?;
+            Some(from_slice(&contents)?)
+        } else {
+            None
+        })
+    }
+}
+
+
+/// Encrypted cred storage provider using the Linux secret-service D-Bus API
 #[cfg(unix)]
 pub struct CredentialStorageSecretService {
     session: SecretService<'static>,

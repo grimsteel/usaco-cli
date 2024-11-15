@@ -5,7 +5,7 @@ mod solution;
 mod status_spinner;
 
 use crate::{
-    credential_storage::{CredentialStorageError, CredentialStorageSecretService},
+    credential_storage::{CredentialStorageError, autoselect_cred_storage},
     http_client::{HttpClient, HttpClientError},
     preferences::{DataStore, PreferencesError},
 };
@@ -17,7 +17,8 @@ use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
 use log::{error, LevelFilter};
 use status_spinner::StatusSpinner;
-use std::{io::{stdout, Write}, process::ExitCode, sync::Arc};
+use std::{io::{stdout, Write}, process::ExitCode};
+use directories::ProjectDirs;
 use thiserror::Error;
 
 /// USACO command-line interface
@@ -106,9 +107,10 @@ fn setup_logging() -> (MultiProgress, Args) {
 }
 
 async fn run_internal(multi: MultiProgress, args: Args) -> Result {
-    let cred_storage = Arc::new(CredentialStorageSecretService::init().await?);
+    let dirs = ProjectDirs::from("com", "grimsteel", "usaco-cli").unwrap();
+    let prefs = DataStore::new(dirs.clone()).await?;
+    let cred_storage = autoselect_cred_storage(&dirs).await;
     let client = HttpClient::init(cred_storage.clone());
-    let prefs = DataStore::new().await?;
 
     match args.command {
         Command::Ping => {
@@ -133,7 +135,7 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result {
         }
         Command::Auth { command } => auth::handle(command, client, cred_storage, multi).await?,
         Command::Problem { command } => problem::handle(command, client, &prefs, multi).await?,
-        Command::Solution { command } => solution::handle(command, client, &prefs, multi).await?,
+        Command::Solution { command } => solution::handle(command, client, &prefs, multi, dirs).await?,
         Command::Preferences { command } => preferences::handle(command, &prefs, multi).await?,
     }
 

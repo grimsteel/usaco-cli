@@ -14,6 +14,7 @@ use tokio::{
     fs::{create_dir_all, try_exists, write, read_to_string, remove_file},
     process::Command as ProcessCommand,
 };
+use directories::ProjectDirs;
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
@@ -40,6 +41,7 @@ pub async fn handle(
     client: HttpClient,
     store: &DataStore,
     multi: MultiProgress,
+    dirs: ProjectDirs,
 ) -> super::Result {
     let lock = store.read()?;
     if let Some(dir) = &lock.solutions_dir {
@@ -153,7 +155,7 @@ import sys
                 let lang = lock.preferred_language;
                 let compiler = lock.cpp_compiler;
                 let multi_2 = multi.clone();
-                let cache_dir = store.dirs.cache_dir();
+                let cache_dir = dirs.cache_dir();
                 get_problem(problem_id, &client, store, &multi, |problem| async move {
                     let filename = format!("{}.{}", problem.id, lang.to_str());
                     let problem_file = dir.join("src").join(problem.division.to_str()).join(filename);

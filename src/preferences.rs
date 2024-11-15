@@ -78,7 +78,7 @@ type ProblemCache = IndexMap<u64, Problem>;
 #[derive(Debug)]
 pub struct DataStore {
     preferences: RefCell<Preferences>,
-    pub dirs: ProjectDirs,
+    dirs: ProjectDirs,
     problem_cache: RefCell<ProblemCache>,
 }
 
@@ -86,9 +86,7 @@ impl DataStore {
     /// Load preferences from the preferences file
     /// Searches in the current directory, then in the nearest git dir
     /// If none exists, create one in the nearest git dir, or if none exists, in the current dir
-    pub async fn new() -> Result<Self> {
-        let dirs = ProjectDirs::from("com", "grimsteel", "usaco-cli").unwrap();
-
+    pub async fn new(dirs: ProjectDirs) -> Result<Self> {
         // load prefs
         let config_path = dirs.config_dir().join(PREF_FILE_NAME);
         let preferences = if try_exists(&config_path).await? {
