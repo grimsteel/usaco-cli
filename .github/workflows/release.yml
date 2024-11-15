@@ -4,12 +4,14 @@ on:
   push:
     tags:
       - "v*.*"
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    strategy:
+      matrix:
+        os: [ubuntu-latest,windows-latest,macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         name: Checkout
@@ -21,14 +23,30 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ubuntu-cargo-release
+          key: ${{ runner.os }}-cargo-release
       - uses: dtolnay/rust-toolchain@stable
         name: Setup rust
       - run: cargo build --release
         name: Build
-      - run: cp target/release/usaco-cli usaco
-        name: Copy artifacts
+      - name: Get target
+        run: "echo \"target=$(rustc -vV | sed -n 's|host: ||p')\" >> $GITHUB_ENV"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: usaco-${{ env.target }}
+          path: target/release/usaco-cli
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: usaco
+          files: |
+            usaco-x86_64-unknown-linux-gnu
+            usaco-x86_64-pc-windows-mscvc
+            usaco-aarch64-apple-darwin
