@@ -10,8 +10,14 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest,windows-latest,macos-latest]
-    runs-on: ${{ matrix.os }}
+        platform:
+          - os: ubuntu-latest
+            bin: usaco-cli
+          - os: macos-latest
+            bin: usaco-cli
+          - os: windows-latest
+            bin: usaco-cli.exe
+    runs-on: ${{ matrix.platform.os }}
     steps:
       - uses: actions/checkout@v4
         name: Checkout
@@ -34,7 +40,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: usaco-${{ env.target }}
-          path: target/release/usaco-cli
+          path: target/release/${{ matrix.platform.bin }}
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -47,6 +53,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            usaco-x86_64-unknown-linux-gnu
-            usaco-x86_64-pc-windows-msvc
-            usaco-aarch64-apple-darwin
+            usaco*
