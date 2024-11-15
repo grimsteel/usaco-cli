@@ -6,7 +6,7 @@ use directories::ProjectDirs;
 use serde::{Serialize, Deserialize};
 use serde_json::{from_slice, to_vec};
 use tokio::fs::{read, write, try_exists, create_dir_all, remove_file};
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use secret_service::{Collection, EncryptionType, Item, SecretService};
 use thiserror::Error;
 
@@ -19,7 +19,7 @@ pub struct UsacoCredentials {
 
 #[derive(Error, Debug)]
 pub enum CredentialStorageError {
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[error("Secret service error: {0}")]
     SecretService(#[from] secret_service::Error),
     #[error("Password is not valid UTF-8")]
@@ -100,12 +100,12 @@ impl CredentialStorage for CredentialStoragePlaintext {
 
 
 /// Encrypted cred storage provider using the Linux secret-service D-Bus API
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 pub struct CredentialStorageSecretService {
     session: SecretService<'static>,
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 impl CredentialStorageSecretService {
     pub async fn init() -> Result<Self> {
         let session = SecretService::connect(EncryptionType::Plain).await?;
@@ -124,7 +124,7 @@ impl CredentialStorageSecretService {
 }
 
 #[async_trait(?Send)]
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 impl CredentialStorage for CredentialStorageSecretService {
     async fn get_credentials(&self) -> Result<Option<UsacoCredentials>> {
         debug!("Loading credentials");
