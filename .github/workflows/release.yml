@@ -13,10 +13,13 @@ jobs:
         platform:
           - os: ubuntu-latest
             bin: usaco-cli
+            target: linux-x86_64-gnu
           - os: macos-latest
             bin: usaco-cli
+            target: macos-aarch64
           - os: windows-latest
             bin: usaco-cli.exe
+            target: windows.exe
     runs-on: ${{ matrix.platform.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +42,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: usaco-${{ env.target }}
+          name: usaco-${{ matrix.platform.target }}
           path: target/release/${{ matrix.platform.bin }}
   release:
     needs: build
@@ -54,3 +57,13 @@ jobs:
         with:
           files: |
             usaco*
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        name: Checkout
+      - uses: dtolnay/rust-toolchain@stable
+        name: Setup rust
+      - name: Cargo publish
+        run: cargo publish --no-verify --token ${{ secrets.CARGO_API_TOKEN }}
