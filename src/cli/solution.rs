@@ -354,7 +354,7 @@ int main() {{
                             } else {
                                 error!("Case {} failed\n{}", i + 1, style("Diff:").cyan());
                                 // print diff
-                                let diff = TextDiff::from_words(
+                                let diff = TextDiff::from_lines(
                                     trimmed_target_out,
                                     trimmed_out
                                 );
