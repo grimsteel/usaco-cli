@@ -15,7 +15,7 @@ use console::style;
 use env_logger::Env;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use log::{error, LevelFilter};
+use log::{error, LevelFilter, Level};
 use status_spinner::StatusSpinner;
 use std::{io::{stdout, Write}, process::ExitCode};
 use directories::ProjectDirs;
@@ -89,11 +89,32 @@ fn setup_logging() -> (MultiProgress, Args) {
     let show_line_numbers = std::env::var("RUST_LOG_LINE_NUMBERS").is_ok_and(|s| s.to_lowercase() == "true");
     // set style
     logger.format(move |buf, record| {
+        let level_icon = match record.level() {
+            Level::Error => "✕",
+            Level::Warn => "⚠",
+            Level::Info => "i",
+            Level::Debug => "DBG",
+            Level::Trace => "TRACE",
+        };
         if show_line_numbers {
             // print filename and line numbers
-            writeln!(buf, "{0}{1}{0:#} ({3}:{4}): {2}", buf.default_level_style(record.level()).bold(), record.level(), record.args(), record.file().unwrap_or("?"), record.line().map(|s| s.to_string()).unwrap_or_else(|| "?".to_string()))
+            writeln!(
+                buf,
+                "{0}{1}{0:#} ({3}:{4}): {2}",
+                buf.default_level_style(record.level()).bold(),
+                level_icon,
+                record.args(),
+                record.file().unwrap_or("?"),
+                record.line().map(|s| s.to_string()).unwrap_or_else(|| "?".to_string())
+            )
         } else {
-            writeln!(buf, "{0}{1}{0:#}: {2}", buf.default_level_style(record.level()).bold(), record.level(), record.args())
+            writeln!(
+                buf,
+                "{0}{1}:{0:#} {2}",
+                buf.default_level_style(record.level()).bold(),
+                level_icon,
+                record.args()
+            )
         }
     });
     

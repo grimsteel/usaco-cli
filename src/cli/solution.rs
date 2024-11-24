@@ -5,7 +5,7 @@ use crate::{
     preferences::{DataStore, Language, CPPCompiler},
 };
 use clap::Subcommand;
-use console::style;
+use console::{style, Style};
 use indicatif::MultiProgress;
 use log::{info, warn, error};
 use tokio::{
@@ -15,6 +15,7 @@ use tokio::{
     process::Command as ProcessCommand,
 };
 use directories::ProjectDirs;
+use similar::{TextDiff, ChangeTag};
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
@@ -344,11 +345,36 @@ int main() {{
                             } else {
                                 String::from_utf8_lossy(&out.stdout)
                             };
-                            // TODO: show diffs
-                            if out.trim() == test_case.output.trim() {
+
+                            let trimmed_out = out.trim();
+                            let trimmed_target_out = test_case.output.trim();
+
+                            if trimmed_out == trimmed_target_out {
                                 info!("Case {} passed", i + 1);
                             } else {
-                                error!("Case {} failed", i + 1);
+                                error!("Case {} failed\n{}", i + 1, style("Diff:").cyan());
+                                // print diff
+                                let diff = TextDiff::from_words(
+                                    trimmed_target_out,
+                                    trimmed_out
+                                );
+                                for change in diff.iter_all_changes() {
+                                    let (sign, s) = match change.tag() {
+                                        ChangeTag::Delete => ("-", Style::new().red()),
+                                        ChangeTag::Insert => ("+", Style::new().green()),
+                                        ChangeTag::Equal => (" ", Style::new()),
+                                    };
+                                    info!(
+                                        "{}｜ {}{}",
+                                        style(
+                                            change.new_index()
+                                                .map(|s| format!("{:<3}", s + 1))
+                                                .unwrap_or_else(|| "   ".to_string())
+                                        ).dim(),
+                                        s.apply_to(sign).bold(),
+                                        s.apply_to(change.as_str().unwrap_or("").trim_end())
+                                    );
+                                }
                             }
                         }
 
