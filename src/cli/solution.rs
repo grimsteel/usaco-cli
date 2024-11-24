@@ -1,4 +1,4 @@
-use std::{borrow::Cow, process::{Stdio, ExitStatus}};
+use std::{borrow::Cow, process::{Stdio, ExitStatus}, io::ErrorKind};
 use super::{problem::get_problem, status_spinner::StatusSpinner};
 use crate::{
     http_client::{Division, HttpClient, IoMode},
@@ -34,6 +34,28 @@ pub enum Command {
         /// Problem ID. Will prompt if not given and if current problem is not set.
         problem_id: Option<u64>,
     }
+}
+
+/// windows uses py/py3
+pub fn get_python_executable() -> std::io::Result<Option<&'static str>> {
+    for name in ["python3", "python2", "python", "py3", "py"] {
+        match ProcessCommand::new(name)
+            .arg("-V")
+            .stdout(Stdio::piped())
+            .stdin(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn() {
+            Ok(_) => return Ok(Some(name)),
+            Err(e) => {
+                if e.kind() == ErrorKind::NotFound {
+                    continue;
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+    Ok(None)
 }
 
 pub async fn handle(
@@ -117,10 +139,8 @@ int main() {{
                                 )
                             },
                             Language::Python => {
-                                // TODO: make executable or just use python3 when testing
                                 format!(
-                                    r#"#!/usr/bin/python3
-import sys
+                                    r#"import sys
 
 {}{}
 
@@ -214,7 +234,7 @@ import sys
                             status.finish("Finished compiling", true);
 
                             // test solution
-                            let status = StatusSpinner::new("Testing solution...", &multi_2);
+                            let status = StatusSpinner::new(&format!("Testing solution... (0/{})", problem.test_cases.len()), &multi_2);
                             let in_file_name = if let IoMode::File(filename) = &problem.input {
                                 Some(cache_dir.join(filename))
                             } else {
@@ -225,26 +245,48 @@ import sys
                             } else {
                                 None
                             };
+                            // figure out what python executable to use
+                            let python_exec = if lang == Language::Python {
+                                if let Some(exec) = get_python_executable()? {
+                                    Some(exec)
+                                } else {
+                                    status.finish("Compilation failed", false);
+                                    return Ok(());
+                                }
+                            } else {
+                                None
+                            };
                             for (i, test_case) in problem.test_cases.iter().enumerate() {
                                 // write input file
                                 if let Some(in_file_name) = &in_file_name {
                                     write(in_file_name, &test_case.input).await?;
                                 }
-                                
-                                let mut command = ProcessCommand::new(&run_file)
+
+                                let mut command = match lang {
+                                    Language::CPP => ProcessCommand::new(&run_file),
+                                    Language::Python => {
+                                        let mut c = ProcessCommand::new(python_exec.unwrap());
+                                        c.arg(&run_file);
+                                        c
+                                    }
+                                };
+
+                                // spawn the process for each test case
+                                let mut child = command
                                     .stdin(Stdio::piped())
                                     .stderr(Stdio::piped())
                                     .stdout(Stdio::piped())
                                     .current_dir(&cache_dir)
                                     .spawn()?;
 
+                                // write test case to stdin
                                 if problem.input == IoMode::Stdio {
-                                    let mut stdin = command.stdin.take().unwrap();
+                                    let mut stdin = child.stdin.take().unwrap();
                                     stdin.write_all(&test_case.input.as_bytes()).await?;
                                     stdin.flush().await?;
                                 }
 
-                                let stderr = command.stderr.take().unwrap();
+                                let stderr = child.stderr.take().unwrap();
                                 
                                 // print stderr (for debugging)
                                 tokio::spawn(async move {
@@ -260,7 +302,7 @@ import sys
                                 });
 
                                 // get output, either by reading output file or stdout
-                                let out = command.wait_with_output().await?;
+                                let out = child.wait_with_output().await?;
                                 let out = if let Some(out_file_name) = &out_file_name {
                                     Cow::Owned(read_to_string(&out_file_name).await?)
                                 } else {

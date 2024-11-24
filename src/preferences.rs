@@ -56,7 +56,7 @@ impl Language {
     pub fn to_str(&self) -> &'static str {
         match self {
             Self::CPP => "cpp",
-            Self::Python => "python",
+            Self::Python => "py",
         }
     }
 }
