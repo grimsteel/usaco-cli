@@ -31,11 +31,9 @@ A command line tool for USACO
 
 ### Binaries
 
-Prebuilt binaries for `x86_64-unknown-linux-gnu` are provided on the Releases page
+Prebuilt binaries for `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, and `x86_64-pc-windows-msvc` are provided on the Releases page
 
 Make a GH issue if you want more targets
-
-Note that currently, the code only supports UNIX targets, but in the future, I may add Windows support.
 
 ## Usage
 

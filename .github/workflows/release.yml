@@ -13,13 +13,13 @@ jobs:
         platform:
           - os: ubuntu-latest
             bin: usaco-cli
-            target: linux-x86_64-gnu
+            target: x86_64-unknown-linux-gnu
           - os: macos-latest
             bin: usaco-cli
-            target: macos-aarch64
+            target: aarch64-apple-darwin
           - os: windows-latest
             bin: usaco-cli.exe
-            target: windows.exe
+            target: x86_64-pc-windows-msvc.exe
     runs-on: ${{ matrix.platform.os }}
     steps:
       - uses: actions/checkout@v4
@@ -37,11 +37,13 @@ jobs:
         name: Setup rust
       - run: cargo build --release
         name: Build
+      - name: Move artifacts
+        run: mv target/release/${{ matrix.platform.bin }} ./usaco-${{ matrix.platform.target }}
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: usaco-${{ matrix.platform.target }}
-          path: target/release/${{ matrix.platform.bin }}
+          path: ./usaco-${{ matrix.platform.target }}
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -50,11 +52,15 @@ jobs:
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
+        with:
+          path: bin
+          pattern: usaco-*
+          merge-multiple: true
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            usaco-cli/*
+            bin/*
   publish:
     needs: build
     runs-on: ubuntu-latest
