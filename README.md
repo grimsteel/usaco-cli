@@ -2,7 +2,7 @@
 
 ![GitHub Release](https://img.shields.io/github/v/release/grimsteel/usaco-cli?logo=github) ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/grimsteel/usaco-cli/release.yml?logo=githubactions&logoColor=white) ![Crates.io Version](https://img.shields.io/crates/v/usaco-cli?logo=rust) ![GitHub License](https://img.shields.io/github/license/grimsteel/usaco-cli) ![GitHub commit activity](https://img.shields.io/github/commit-activity/m/grimsteel/usaco-cli?logo=git&logoColor=white)
 
-
+![demo gif](demo/demo.gif)
 
 A command line tool for USACO
 
