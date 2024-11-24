@@ -1,4 +1,4 @@
-use std::{borrow::Cow, process::{Stdio, ExitStatus}, io::ErrorKind};
+use std::{borrow::Cow, process::Stdio, io::ErrorKind, path::Path};
 use super::{problem::get_problem, status_spinner::StatusSpinner};
 use crate::{
     http_client::{Division, HttpClient, IoMode},
@@ -11,7 +11,7 @@ use log::{info, warn, error};
 use tokio::{
     io::{BufReader, AsyncBufReadExt, AsyncWriteExt},
     select,
-    fs::{create_dir_all, try_exists, write, read_to_string, remove_file},
+    fs::{create_dir_all, try_exists, write, read_to_string, remove_file, metadata},
     process::Command as ProcessCommand,
 };
 use directories::ProjectDirs;
@@ -34,6 +34,33 @@ pub enum Command {
         /// Problem ID. Will prompt if not given and if current problem is not set.
         problem_id: Option<u64>,
     }
+}
+
+/// check if file2 is newer than file1
+pub async fn file_newer<T: AsRef<Path>>(file1: T, file2: T) -> std::io::Result<bool> {
+    // get info for both files
+    let file1_modified = match metadata(file1).await {
+        Ok(m) => m.modified()?,
+        Err(e) => {
+            // if either one does not exist, return false
+            return if e.kind() == ErrorKind::NotFound {
+                Ok(false)
+            } else {
+                Err(e)
+            };
+        }
+    };
+    let file2_modified = match metadata(file2).await {
+        Ok(m) => m.modified()?,
+        Err(e) => {
+            return if e.kind() == ErrorKind::NotFound {
+                Ok(false)
+            } else {
+                Err(e)
+            };
+        }
+    };
+    Ok(file2_modified > file1_modified)
 }
 
 /// windows uses py/py3
@@ -181,155 +208,162 @@ int main() {{
                     let problem_file = dir.join("src").join(problem.division.to_str()).join(filename);
                     // problem file for python, out file for cpp
                     let mut run_file = problem_file.clone();
-                    // TODO: skip recompilation if not needed
-                    let status = StatusSpinner::new("Compiling solution...", &multi_2);
+                    
                     if try_exists(&problem_file).await? {
-                        let comp_status = if lang == Language::CPP {
+                        // compile
+                        if lang == Language::CPP {
+                            let status = StatusSpinner::new("Compiling solution...", &multi_2);
+                            
                             // make sure the output dir exists
                             let mut out_file = dir.join("bin").join(problem.division.to_str());
                             create_dir_all(&out_file).await?;
                             out_file.push(problem.id.to_string());
 
-                            // compile
-                            let mut command = ProcessCommand::new(match compiler {
-                                CPPCompiler::GCC => "g++",
-                                CPPCompiler::Clang => "clang"
-                            })
-                                .arg("-Wall")
-                                .arg("-g")
-                                .arg("-o")
-                                .arg(&out_file)
-                                .arg(problem_file)
-                                .stdin(Stdio::piped())
-                                .stdout(Stdio::piped())
-                                .stderr(Stdio::piped())
-                                .spawn()?;
-
-                            run_file = out_file;
-
-                            let stdout = command.stdout.take().unwrap();
-                            let stderr = command.stderr.take().unwrap();
-
-                            // print output
-                            tokio::spawn(async move {
-                                let mut stdout = BufReader::new(stdout).lines();
-                                let mut stderr = BufReader::new(stderr).lines();
-                                loop {
-                                    select! {
-                                        Ok(Some(line)) = stdout.next_line() => {
-                                            info!("Comp: {}", line);
-                                        },
-                                        Ok(Some(line)) = stderr.next_line() => {
-                                            warn!("Comp: {}", line);
-                                        },
-                                        else => { break; }
-                                    }
-                                }
-                            });
-
-                            command.wait().await?
-                        } else { ExitStatus::default() };
-
-                        if comp_status.code() == Some(0) {
-                            status.finish("Finished compiling", true);
-
-                            // test solution
-                            let status = StatusSpinner::new(&format!("Testing solution... (0/{})", problem.test_cases.len()), &multi_2);
-                            let in_file_name = if let IoMode::File(filename) = &problem.input {
-                                Some(cache_dir.join(filename))
+                            // if run file is newer than source file, no compilation needed
+                            if file_newer(&problem_file, &out_file).await? {
+                                status.finish("Compilation skipped", true);
                             } else {
-                                None
-                            };
-                            let out_file_name = if let IoMode::File(filename) = &problem.output {
-                                Some(cache_dir.join(filename))
-                            } else {
-                                None
-                            };
-                            // figure out what python executable to use
-                            let python_exec = if lang == Language::Python {
-                                if let Some(exec) = get_python_executable()? {
-                                    Some(exec)
-                                } else {
-                                    status.finish("Compilation failed", false);
-                                    return Ok(());
-                                }
-                            } else {
-                                None
-                            };
-                            for (i, test_case) in problem.test_cases.iter().enumerate() {
-                                // write input file
-                                if let Some(in_file_name) = &in_file_name {
-                                    write(in_file_name, &test_case.input).await?;
-                                }
-
-                                let mut command = match lang {
-                                    Language::CPP => ProcessCommand::new(&run_file),
-                                    Language::Python => {
-                                        let mut c = ProcessCommand::new(python_exec.unwrap());
-                                        c.arg(&run_file);
-                                        c
-                                    }
-                                };
-
-                                // spawn the process for each test case
-                                let mut child = command
+                                // compile
+                                let mut command = ProcessCommand::new(match compiler {
+                                    CPPCompiler::GCC => "g++",
+                                    CPPCompiler::Clang => "clang"
+                                })
+                                    .arg("-Wall")
+                                    .arg("-g")
+                                    .arg("-o")
+                                    .arg(&out_file)
+                                    .arg(problem_file)
                                     .stdin(Stdio::piped())
-                                    .stderr(Stdio::piped())
                                     .stdout(Stdio::piped())
-                                    .current_dir(&cache_dir)
+                                    .stderr(Stdio::piped())
                                     .spawn()?;
 
-                                // write test case to stdin
-                                if problem.input == IoMode::Stdio {
-                                    let mut stdin = child.stdin.take().unwrap();
-                                    stdin.write_all(&test_case.input.as_bytes()).await?;
-                                    stdin.flush().await?;
-                                }
+                                let stdout = command.stdout.take().unwrap();
+                                let stderr = command.stderr.take().unwrap();
 
-                                let stderr = child.stderr.take().unwrap();
-                                
-                                // print stderr (for debugging)
+                                // print output
                                 tokio::spawn(async move {
+                                    let mut stdout = BufReader::new(stdout).lines();
                                     let mut stderr = BufReader::new(stderr).lines();
                                     loop {
                                         select! {
+                                            Ok(Some(line)) = stdout.next_line() => {
+                                                info!("Comp: {}", line);
+                                            },
                                             Ok(Some(line)) = stderr.next_line() => {
-                                                warn!("Run {}: {}", i + 1, line);
+                                                warn!("Comp: {}", line);
                                             },
                                             else => { break; }
                                         }
                                     }
                                 });
 
-                                // get output, either by reading output file or stdout
-                                let out = child.wait_with_output().await?;
-                                let out = if let Some(out_file_name) = &out_file_name {
-                                    Cow::Owned(read_to_string(&out_file_name).await?)
+                                if command.wait().await?.success() {
+                                    status.finish("Finished compiling", true);
                                 } else {
-                                    String::from_utf8_lossy(&out.stdout)
-                                };
-                                // TODO: show diffs
-                                if out.trim() == test_case.output.trim() {
-                                    info!("Case {} passed", i + 1);
-                                } else {
-                                    error!("Case {} failed", i + 1);
+                                    status.finish("Compilation failed", false);
+                                    return Ok(());
                                 }
                             }
 
-                            // clean up
-                            if let Some(in_file_name) = &in_file_name {
-                                remove_file(in_file_name).await?;
-                            }
-                            if let Some(out_file_name) = &out_file_name {
-                                remove_file(out_file_name).await?;
-                            }
-                            
-                            status.finish("Finished testing", true);
-                        } else {
-                            status.finish("Compilation failed", false);
+                            run_file = out_file;
                         }
+
+                        // test solution
+                        let status = StatusSpinner::new("Testing solution...", &multi_2);
+                        let in_file_name = if let IoMode::File(filename) = &problem.input {
+                            Some(cache_dir.join(filename))
+                        } else {
+                            None
+                        };
+                        let out_file_name = if let IoMode::File(filename) = &problem.output {
+                            Some(cache_dir.join(filename))
+                        } else {
+                            None
+                        };
+                        // figure out what python executable to use
+                        let python_exec = if lang == Language::Python {
+                            if let Some(exec) = get_python_executable()? {
+                                Some(exec)
+                            } else {
+                                status.finish("Compilation failed", false);
+                                return Ok(());
+                            }
+                        } else {
+                            None
+                        };
+                        for (i, test_case) in problem.test_cases.iter().enumerate() {
+                            // write input file
+                            if let Some(in_file_name) = &in_file_name {
+                                write(in_file_name, &test_case.input).await?;
+                            }
+
+                            let mut command = match lang {
+                                Language::CPP => ProcessCommand::new(&run_file),
+                                Language::Python => {
+                                    let mut c = ProcessCommand::new(python_exec.unwrap());
+                                    c.arg(&run_file);
+                                    c
+                                }
+                            };
+
+                            // spawn the process for each test case
+                            let mut child = command
+                                .stdin(Stdio::piped())
+                                .stderr(Stdio::piped())
+                                .stdout(Stdio::piped())
+                                .current_dir(&cache_dir)
+                                .spawn()?;
+
+                            // write test case to stdin
+                            if problem.input == IoMode::Stdio {
+                                let mut stdin = child.stdin.take().unwrap();
+                                stdin.write_all(&test_case.input.as_bytes()).await?;
+                                stdin.flush().await?;
+                            }
+
+                            let stderr = child.stderr.take().unwrap();
+                            
+                            // print stderr (for debugging)
+                            tokio::spawn(async move {
+                                let mut stderr = BufReader::new(stderr).lines();
+                                loop {
+                                    select! {
+                                        Ok(Some(line)) = stderr.next_line() => {
+                                            warn!("Run {}: {}", i + 1, line);
+                                        },
+                                        else => { break; }
+                                    }
+                                }
+                            });
+
+                            // get output, either by reading output file or stdout
+                            let out = child.wait_with_output().await?;
+                            let out = if let Some(out_file_name) = &out_file_name {
+                                Cow::Owned(read_to_string(&out_file_name).await?)
+                            } else {
+                                String::from_utf8_lossy(&out.stdout)
+                            };
+                            // TODO: show diffs
+                            if out.trim() == test_case.output.trim() {
+                                info!("Case {} passed", i + 1);
+                            } else {
+                                error!("Case {} failed", i + 1);
+                            }
+                        }
+
+                        // clean up
+                        if let Some(in_file_name) = &in_file_name {
+                            remove_file(in_file_name).await?;
+                        }
+                        if let Some(out_file_name) = &out_file_name {
+                            remove_file(out_file_name).await?;
+                        }
+                        
+                        status.finish("Finished testing", true);
+                        
                     } else {
-                        status.finish(&format!("Solution file {} does not exist", &problem_file.display()), false);
+                        error!("Solution file {} does not exist", &problem_file.display());
                     }
 
                     Ok(())

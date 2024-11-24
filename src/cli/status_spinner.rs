@@ -27,7 +27,7 @@ impl<'a> StatusSpinner<'a> {
 
         self.bar.set_prefix(
             if success {
-                style("✓").green()
+                style("✔").green()
             } else {
                 style("✕").red()
             }

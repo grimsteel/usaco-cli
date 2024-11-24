@@ -86,9 +86,15 @@ fn setup_logging() -> (MultiProgress, Args) {
     let mut logger = env_logger::Builder::from_env(
         Env::default().default_filter_or("info")
     );
+    let show_line_numbers = std::env::var("RUST_LOG_LINE_NUMBERS").is_ok_and(|s| s.to_lowercase() == "true");
     // set style
-    logger.format(|buf, record| {
-        writeln!(buf, "{0}{1}{0:#}: {2}", buf.default_level_style(record.level()).bold(), record.level(), record.args())
+    logger.format(move |buf, record| {
+        if show_line_numbers {
+            // print filename and line numbers
+            writeln!(buf, "{0}{1}{0:#} ({3}:{4}): {2}", buf.default_level_style(record.level()).bold(), record.level(), record.args(), record.file().unwrap_or("?"), record.line().map(|s| s.to_string()).unwrap_or_else(|| "?".to_string()))
+        } else {
+            writeln!(buf, "{0}{1}{0:#}: {2}", buf.default_level_style(record.level()).bold(), record.level(), record.args())
+        }
     });
     
     let args = Args::parse();
