@@ -16,7 +16,9 @@ pub struct Problem {
     pub problem_num: u8,
     /// ansi escape formatted description
     pub description: String,
-    // sample test cases
+    /// data released after the competition ends
+    pub released_data: Option<ReleasedProblemData>,
+    /// sample test cases
     pub test_cases: Vec<TestCase>,
     /// all new problems use stdio, older ones use .in and .out files
     pub input: IoMode,
@@ -35,10 +37,20 @@ pub enum IoMode {
     File(String),
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ReleasedProblemData {
+    /// ansi escape formatted writeup
+    pub writeup: String,
+    /// writeup URL
+    pub writeup_url: String,
+    /// official test case data
+    pub official_test_case_url: String,
+}
+
+// these regexes are re-used
+static MATHCAL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\\mathcal\{([A-Z])\}"#).unwrap());
 static MATH_ENTITY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\\(\w+)"#).unwrap());
-
 static LATEX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\$(.*?)\$"#).unwrap());
-
 static WS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\s+"#).unwrap());
 
 /// helper function to parse text with re
@@ -47,7 +59,7 @@ fn parse_el_regex<'a>(el: Option<ElementRef<'a>>, re: &Regex) -> Option<Captures
 }
 
 /// parse problem HTML into ansi escaped text
-fn parse_problem_description(el: ElementRef<'_>, is_pre: bool) -> Option<String> {
+fn parse_problem_description(el: ElementRef<'_>, is_pre: bool, is_inline: bool) -> Option<String> {
     let mut parts: Vec<String> = vec![];
     for c in el.children() {
         match c.value() {
@@ -55,8 +67,13 @@ fn parse_problem_description(el: ElementRef<'_>, is_pre: bool) -> Option<String>
                 let text = text.trim();
                 // text node - add this to list if not empty
                 if text.len() > 0 {
+                    // generally used for Big-O notation
+                    let text = MATHCAL_RE.replace_all(text, |caps: &Captures| {
+                        // just passthrough
+                        caps.get(1).unwrap().as_str().to_string()
+                    });
                     // handle match entities
-                    let text = MATH_ENTITY_RE.replace_all(text, |caps: &Captures| {
+                    let text = MATH_ENTITY_RE.replace_all(text.as_ref(), |caps: &Captures| {
                         match caps.get(1).unwrap().as_str() {
                             "leq" | "le" => "≤",
                             "geq" | "ge" => "≥",
@@ -88,18 +105,19 @@ fn parse_problem_description(el: ElementRef<'_>, is_pre: bool) -> Option<String>
             Node::Element(e) => {
                 // convert c to an element
                 let c_el = ElementRef::wrap(c).unwrap();
-                if e.name() == "ul" {
+                if e.name() == "script" {
+                    continue;
+                } else if e.name() == "ul" {
                     // format like a list
                     let children = c_el
                         .child_elements()
-                        .filter_map(|e| parse_problem_description(e, false))
+                        .filter_map(|e| parse_problem_description(e, false, false))
                         .map(|s| format!(" • {}", s))
                         .collect::<Vec<_>>()
                         .join("\n");
                     parts.push(children);
-                } else if let Some(mut result) = parse_problem_description(c_el, e.name() == "pre")
-                {
-                    if e.name() == "h4" {
+                } else if let Some(mut result) = parse_problem_description(c_el, e.name() == "pre", e.name() == "p" || e.name() == "strong") {
+                    if e.name() == "h4" || e.name() == "strong" {
                         result = format!(
                             "\n{}",
                             style(format!("{}", result))
@@ -121,11 +139,80 @@ fn parse_problem_description(el: ElementRef<'_>, is_pre: bool) -> Option<String>
     if parts.len() == 0 {
         None
     } else {
-        Some(parts.join("\n"))
+        Some(parts.join(if is_inline { " " } else { "\n" }))
     }
 }
 
 impl HttpClient {
+    async fn get_released_problem_data(&self, problem_id: u64, doc: &Html) -> Option<ReleasedProblemData> {
+        // get the problem list url
+        let button_selector = Selector::parse("button").unwrap();
+        let button = doc
+            .select(&button_selector)
+            .next()?;
+        let location_re = Regex::new(r#"window\.location='([^']+)';"#).unwrap();
+        let problem_list_url = format!(
+            "https://usaco.org/{}",
+            location_re.captures(button.attr("onclick")?)?.get(1).unwrap().as_str()
+        );
+
+        // fetch the problem list doc
+        let res = self
+            .client
+            .get(problem_list_url)
+            .send()
+            .await.ok()?;
+
+        let body: String = res.text().await.ok()?;
+        let pl_doc = Html::parse_document(&body);
+
+        // figure out where this problem is on the problem list
+        let problem_link_selector = Selector::parse(&format!(
+            r#"a[href="index.php?page=viewproblem2&cpid={}"]"#,
+            problem_id
+        )).unwrap();
+
+        let problem_link = pl_doc.select(&problem_link_selector)
+            .next()?;
+
+        let mut link_siblings = problem_link.next_siblings()
+            .filter_map(|node| {
+                let el = ElementRef::wrap(node)?;
+                if el.value().name() == "a" {
+                    // make absolute
+                    Some(format!(
+                        "https://usaco.org/{}",
+                        el.attr("href")?
+                    ))
+                } else {
+                    None
+                }
+            });
+
+        let test_data_url = link_siblings.next()?.to_string();
+        let writeup_url = link_siblings.next()?.to_string();
+
+        // fetch the writeup
+        let writeup_res = self
+            .client
+            .get(&writeup_url)
+            .send()
+            .await.ok()?;
+
+        // parse the writeup
+        let writeup_body: String = writeup_res.text().await.ok()?;
+        let body_selector = Selector::parse("body").unwrap();
+        let writeup_doc = Html::parse_document(&writeup_body);
+        let writeup = parse_problem_description(writeup_doc.select(&body_selector).next()?, false, false)
+            .unwrap_or_default();
+        
+        Some(ReleasedProblemData {
+            official_test_case_url: test_data_url,
+            writeup_url,
+            writeup
+        })
+    }
+    
     pub async fn get_problem(&self, problem_id: u64) -> Result<Problem> {
         let res = self
             .client
@@ -191,8 +278,11 @@ impl HttpClient {
             .next()
             .ir_msg("could not find problem description")?;
         let description =
-            parse_problem_description(description, false).unwrap_or_else(|| "".into());
+            parse_problem_description(description, false, false).unwrap_or_else(|| "".into());
 
+        let released_data = self.get_released_problem_data(problem_id, &doc).await;
+
+        // construct problem struct
         Ok(Problem {
             id: problem_id,
             name: h2.get(2).ir_msg("could not parse name")?.as_str().into(),
@@ -209,6 +299,7 @@ impl HttpClient {
             output: output_format,
             test_cases,
             description,
+            released_data
         })
     }
 }

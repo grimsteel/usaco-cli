@@ -134,6 +134,43 @@ pub async fn get_problem<
     Ok(())
 }
 
+pub fn open_url(url: &str) -> super::Result {
+    // print a styled url
+    println!(
+        "{}",
+        style(format!("Opening {}...", style(&url).bold().cyan())).blue()
+    );
+
+    // launch
+    if cfg!(target_os = "linux") {
+        ProcessCommand::new("xdg-open")
+            .arg(url)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+    } else if cfg!(target_os = "macos") {
+        ProcessCommand::new("open")
+            .arg(url)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+    } else if cfg!(target_os = "windows") {
+        ProcessCommand::new("cmd.exe")
+            .arg("/C")
+            .arg("start")
+            .arg("")
+            .arg(url)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+    }
+
+    Ok(())
+}
+
 pub async fn handle(
     command: Command,
     client: HttpClient,
@@ -171,20 +208,7 @@ pub async fn handle(
                 // print a plain url
                 println!("{}", problem_url);
             } else {
-                // print a styled url
-                println!(
-                    "{}",
-                    style(format!("Opening {}...", style(&problem_url).bold().cyan())).blue()
-                );
-
-                // launch
-                // TODO: mac/windows support
-                ProcessCommand::new("xdg-open")
-                    .arg(problem_url)
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()?;
+                open_url(&problem_url)?;
             }
         }
         Command::Cache {

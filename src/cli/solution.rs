@@ -1,5 +1,5 @@
 use std::{borrow::Cow, process::Stdio, io::ErrorKind, path::Path};
-use super::{problem::get_problem, status_spinner::StatusSpinner};
+use super::{problem::{open_url, get_problem}, status_spinner::StatusSpinner};
 use crate::{
     http_client::{Division, HttpClient, IoMode},
     preferences::{DataStore, Language, CPPCompiler},
@@ -34,6 +34,14 @@ pub enum Command {
     Test {
         /// Problem ID. Will prompt if not given and if current problem is not set.
         problem_id: Option<u64>,
+    },
+    /// View the official solution writeup. Only available for problems from past contests
+    Writeup {
+        /// Problem ID. Will prompt if not given and if current problem is not set.
+        problem_id: Option<u64>,
+        /// Open the writeup in the default browser
+        #[arg(short, long)]
+        open: bool
     }
 }
 
@@ -124,6 +132,22 @@ pub async fn handle(
                 }
 
                 status.finish("Scaffolded successfully!", true);
+            }
+            Command::Writeup { problem_id, open } => {
+                get_problem(problem_id, &client, store, &multi, |problem| async move {
+                    if let Some(rd) = &problem.released_data {
+                        if open {
+                            open_url(&rd.writeup_url)?;
+                        } else {
+                            println!("{}", rd.writeup);
+                        }
+                    } else {
+                        // usually because the competition window is not over
+                        error!("The writeup for this problem has not yet been released");
+                    }
+
+                    Ok(())
+                }).await?;
             }
             Command::Create { problem_id } => {
                 let lang = lock.preferred_language;
