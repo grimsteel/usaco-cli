@@ -18,6 +18,13 @@ A command line tool for USACO
 - C++ 17
 - Python 3
 
+> [!WARNING]
+> This is an unofficial tool, and is neither endorsed nor supported by USACO.
+> 
+> I would not recommend using this during official competitions.
+> 
+> I am not responsible for any consequences from using this tool.
+
 ## Installation
 
 ### Source
