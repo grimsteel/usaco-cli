@@ -16,7 +16,7 @@ use zip::result::ZipError;
 use crate::credential_storage::{CredentialStorage, CredentialStorageError};
 
 pub use account::UserInfo;
-pub use problem::{Problem, IoMode};
+pub use problem::{IoMode, Problem};
 
 #[derive(Error, Debug)]
 pub enum HttpClientError {

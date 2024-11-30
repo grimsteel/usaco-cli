@@ -59,6 +59,13 @@ impl Language {
             Self::Python => "py",
         }
     }
+    /// language codes for official solution submittals
+    pub fn to_usaco_code(&self) -> u8 {
+        match self {
+            Self::CPP => 7,    // C++ 17
+            Self::Python => 4, // Python 3.6.9
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]

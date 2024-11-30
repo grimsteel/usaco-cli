@@ -1,14 +1,14 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
-use log::debug;
 use directories::ProjectDirs;
-use serde::{Serialize, Deserialize};
-use serde_json::{from_slice, to_vec};
-use tokio::fs::{read, write, try_exists, create_dir_all, remove_file};
+use log::debug;
 #[cfg(target_os = "linux")]
 use secret_service::{Collection, EncryptionType, Item, SecretService};
+use serde::{Deserialize, Serialize};
+use serde_json::{from_slice, to_vec};
 use thiserror::Error;
+use tokio::fs::{create_dir_all, read, remove_file, try_exists, write};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UsacoCredentials {
@@ -29,7 +29,7 @@ pub enum CredentialStorageError {
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Serialization error: {0}")]
-    SerdeError(#[from] serde_json::Error)
+    SerdeError(#[from] serde_json::Error),
 }
 
 type Result<T> = std::result::Result<T, CredentialStorageError>;
@@ -49,7 +49,10 @@ pub trait CredentialStorage {
 
 #[cfg(target_os = "linux")]
 async fn get_secret_storage_provider() -> Option<Arc<dyn CredentialStorage>> {
-    CredentialStorageSecretService::init().await.ok().map(|s| Arc::new(s) as Arc<dyn CredentialStorage>)
+    CredentialStorageSecretService::init()
+        .await
+        .ok()
+        .map(|s| Arc::new(s) as Arc<dyn CredentialStorage>)
 }
 #[cfg(not(target_os = "linux"))]
 async fn get_secret_storage_provider() -> Option<Arc<dyn CredentialStorage>> {
@@ -69,15 +72,13 @@ pub async fn autoselect_cred_storage(dirs: &ProjectDirs) -> Arc<dyn CredentialSt
 
 /// Plaintext cred storage provider in the config folder
 pub struct CredentialStoragePlaintext {
-    filename: PathBuf
+    filename: PathBuf,
 }
 
 impl CredentialStoragePlaintext {
     pub fn init(dirs: &ProjectDirs) -> Self {
         let filename = dirs.config_dir().join("secrets.json");
-        Self {
-            filename
-        }
+        Self { filename }
     }
 }
 
@@ -102,9 +103,10 @@ impl CredentialStorage for CredentialStoragePlaintext {
             None
         })
     }
-    fn is_secure(&self) -> bool { false }
+    fn is_secure(&self) -> bool {
+        false
+    }
 }
-
 
 /// Encrypted cred storage provider using the Linux secret-service D-Bus API
 #[cfg(target_os = "linux")]
@@ -199,5 +201,7 @@ impl CredentialStorage for CredentialStorageSecretService {
         Ok(())
     }
 
-    fn is_secure(&self) -> bool { true }
+    fn is_secure(&self) -> bool {
+        true
+    }
 }

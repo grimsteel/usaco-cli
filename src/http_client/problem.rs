@@ -3,8 +3,11 @@ use console::style;
 use regex::{Captures, Regex};
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
+use std::{
+    io::{Cursor, Read},
+    sync::LazyLock,
+};
 use zip::ZipArchive;
-use std::{io::{Cursor, Read}, sync::LazyLock};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Problem {
@@ -49,7 +52,8 @@ pub struct ReleasedProblemData {
 }
 
 // these regexes are re-used
-static MATHCAL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\\mathcal\{([A-Z])\}"#).unwrap());
+static MATHCAL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"\\mathcal\{([A-Z])\}"#).unwrap());
 static MATH_ENTITY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\\(\w+)"#).unwrap());
 static LATEX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\$(.*?)\$"#).unwrap());
 static WS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\s+"#).unwrap());
@@ -117,7 +121,11 @@ fn parse_problem_description(el: ElementRef<'_>, is_pre: bool, is_inline: bool) 
                         .collect::<Vec<_>>()
                         .join("\n");
                     parts.push(children);
-                } else if let Some(mut result) = parse_problem_description(c_el, e.name() == "pre", e.name() == "p" || e.name() == "strong") {
+                } else if let Some(mut result) = parse_problem_description(
+                    c_el,
+                    e.name() == "pre",
+                    e.name() == "p" || e.name() == "strong",
+                ) {
                     if e.name() == "h4" || e.name() == "strong" {
                         result = format!(
                             "\n{}",
@@ -145,24 +153,26 @@ fn parse_problem_description(el: ElementRef<'_>, is_pre: bool, is_inline: bool) 
 }
 
 impl HttpClient {
-    async fn get_released_problem_data(&self, problem_id: u64, doc: &Html) -> Option<ReleasedProblemData> {
+    async fn get_released_problem_data(
+        &self,
+        problem_id: u64,
+        doc: &Html,
+    ) -> Option<ReleasedProblemData> {
         // get the problem list url
         let button_selector = Selector::parse("button").unwrap();
-        let button = doc
-            .select(&button_selector)
-            .next()?;
+        let button = doc.select(&button_selector).next()?;
         let location_re = Regex::new(r#"window\.location='([^']+)';"#).unwrap();
         let problem_list_url = format!(
             "https://usaco.org/{}",
-            location_re.captures(button.attr("onclick")?)?.get(1).unwrap().as_str()
+            location_re
+                .captures(button.attr("onclick")?)?
+                .get(1)
+                .unwrap()
+                .as_str()
         );
 
         // fetch the problem list doc
-        let res = self
-            .client
-            .get(problem_list_url)
-            .send()
-            .await.ok()?;
+        let res = self.client.get(problem_list_url).send().await.ok()?;
 
         let body: String = res.text().await.ok()?;
         let pl_doc = Html::parse_document(&body);
@@ -171,56 +181,45 @@ impl HttpClient {
         let problem_link_selector = Selector::parse(&format!(
             r#"a[href="index.php?page=viewproblem2&cpid={}"]"#,
             problem_id
-        )).unwrap();
+        ))
+        .unwrap();
 
-        let problem_link = pl_doc.select(&problem_link_selector)
-            .next()?;
+        let problem_link = pl_doc.select(&problem_link_selector).next()?;
 
-        let mut link_siblings = problem_link.next_siblings()
-            .filter_map(|node| {
-                let el = ElementRef::wrap(node)?;
-                if el.value().name() == "a" {
-                    // make absolute
-                    Some(format!(
-                        "https://usaco.org/{}",
-                        el.attr("href")?
-                    ))
-                } else {
-                    None
-                }
-            });
+        let mut link_siblings = problem_link.next_siblings().filter_map(|node| {
+            let el = ElementRef::wrap(node)?;
+            if el.value().name() == "a" {
+                // make absolute
+                Some(format!("https://usaco.org/{}", el.attr("href")?))
+            } else {
+                None
+            }
+        });
 
         let test_data_url = link_siblings.next()?.to_string();
         let writeup_url = link_siblings.next()?.to_string();
 
         // fetch the writeup
-        let writeup_res = self
-            .client
-            .get(&writeup_url)
-            .send()
-            .await.ok()?;
+        let writeup_res = self.client.get(&writeup_url).send().await.ok()?;
 
         // parse the writeup
         let writeup_body: String = writeup_res.text().await.ok()?;
         let body_selector = Selector::parse("body").unwrap();
         let writeup_doc = Html::parse_document(&writeup_body);
-        let writeup = parse_problem_description(writeup_doc.select(&body_selector).next()?, false, false)
-            .unwrap_or_default();
-        
+        let writeup =
+            parse_problem_description(writeup_doc.select(&body_selector).next()?, false, false)
+                .unwrap_or_default();
+
         Some(ReleasedProblemData {
             official_test_case_url: test_data_url,
             writeup_url,
-            writeup
+            writeup,
         })
     }
 
     /// download official test cases and parse
     pub async fn get_official_test_cases(&self, zip_url: &str) -> Result<Vec<TestCase>> {
-        let res = self
-            .client
-            .get(zip_url)
-            .send()
-            .await?;
+        let res = self.client.get(zip_url).send().await?;
         let body = Cursor::new(res.bytes().await?);
         let mut zip = ZipArchive::new(body)?;
 
@@ -247,7 +246,9 @@ impl HttpClient {
                 }
             } else {
                 // error out
-                return Err(HttpClientError::UnexpectedResponse("Unknown test case file name format"));
+                return Err(HttpClientError::UnexpectedResponse(
+                    "Unknown test case file name format",
+                ));
             }
         }
 
@@ -260,33 +261,26 @@ impl HttpClient {
                 (format!("{}.in", case_id), format!("{}.out", case_id))
             };
 
-            let in_contents = zip.by_name(&in_name)
-                .ok()
-                .and_then(|mut file| {
-                    let mut contents = String::new();
-                    file.read_to_string(&mut contents).ok()?;
-                    Some(contents)
-                });
-            let out_contents = zip.by_name(&out_name)
-                .ok()
-                .and_then(|mut file| {
-                    let mut contents = String::new();
-                    file.read_to_string(&mut contents).ok()?;
-                    Some(contents)
-                });
-            
+            let in_contents = zip.by_name(&in_name).ok().and_then(|mut file| {
+                let mut contents = String::new();
+                file.read_to_string(&mut contents).ok()?;
+                Some(contents)
+            });
+            let out_contents = zip.by_name(&out_name).ok().and_then(|mut file| {
+                let mut contents = String::new();
+                file.read_to_string(&mut contents).ok()?;
+                Some(contents)
+            });
+
             // read in/out files
             if let Some((input, output)) = in_contents.zip(out_contents) {
-                vec.push(TestCase {
-                    input,
-                    output
-                })
+                vec.push(TestCase { input, output })
             }
         }
-        
+
         Ok(vec)
     }
-    
+
     pub async fn get_problem(&self, problem_id: u64) -> Result<Problem> {
         let res = self
             .client
@@ -373,7 +367,7 @@ impl HttpClient {
             output: output_format,
             test_cases,
             description,
-            released_data
+            released_data,
         })
     }
 }

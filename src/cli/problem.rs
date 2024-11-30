@@ -1,4 +1,4 @@
-use super::status_spinner::StatusSpinner;
+use super::{status_spinner::StatusSpinner, CliError};
 use crate::{
     http_client::{HttpClient, HttpClientError, Problem},
     preferences::DataStore,
@@ -63,11 +63,7 @@ fn print_problem(problem: &Problem) {
     println!("{}", problem.description);
 }
 
-pub async fn get_problem<
-    'a,
-    T: FnOnce(Problem) -> R,
-    R: Future<Output = super::Result> + 'a,
->(
+pub async fn get_problem<'a, T: FnOnce(Problem) -> R, R: Future<Output = super::Result> + 'a>(
     id_param: Option<u64>,
     client: &HttpClient,
     store: &'a DataStore,
@@ -126,6 +122,7 @@ pub async fn get_problem<
             }
             Err(HttpClientError::ProblemNotFound) => {
                 status.finish(&format!("Problem {} not found", id), false);
+                return Err(CliError::ExitError);
             }
             Err(e) => Err(e)?,
         }

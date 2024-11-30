@@ -5,20 +5,23 @@ mod solution;
 mod status_spinner;
 
 use crate::{
-    credential_storage::{CredentialStorageError, autoselect_cred_storage},
+    credential_storage::{autoselect_cred_storage, CredentialStorageError},
     http_client::{HttpClient, HttpClientError},
     preferences::{DataStore, PreferencesError},
 };
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use console::style;
+use directories::ProjectDirs;
 use env_logger::Env;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use log::{error, LevelFilter, Level};
+use log::{error, Level, LevelFilter};
 use status_spinner::StatusSpinner;
-use std::{io::{stdout, Write}, process::ExitCode};
-use directories::ProjectDirs;
+use std::{
+    io::{stdout, Write},
+    process::ExitCode,
+};
 use thiserror::Error;
 
 /// USACO command-line interface
@@ -78,15 +81,18 @@ pub enum CliError {
     IoError(#[from] std::io::Error),
     #[error("Input error: {0}")]
     InputError(#[from] dialoguer::Error),
+
+    /// used when the message has already been printed and we just need to exit
+    #[error("")]
+    ExitError,
 }
 
 type Result<T = ()> = std::result::Result<T, CliError>;
 
 fn setup_logging() -> (MultiProgress, Args) {
-    let mut logger = env_logger::Builder::from_env(
-        Env::default().default_filter_or("info")
-    );
-    let show_line_numbers = std::env::var("RUST_LOG_LINE_NUMBERS").is_ok_and(|s| s.to_lowercase() == "true");
+    let mut logger = env_logger::Builder::from_env(Env::default().default_filter_or("info"));
+    let show_line_numbers =
+        std::env::var("RUST_LOG_LINE_NUMBERS").is_ok_and(|s| s.to_lowercase() == "true");
     // set style
     logger.format(move |buf, record| {
         let level_icon = match record.level() {
@@ -105,7 +111,10 @@ fn setup_logging() -> (MultiProgress, Args) {
                 level_icon,
                 record.args(),
                 record.file().unwrap_or("?"),
-                record.line().map(|s| s.to_string()).unwrap_or_else(|| "?".to_string())
+                record
+                    .line()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "?".to_string())
             )
         } else {
             writeln!(
@@ -117,7 +126,7 @@ fn setup_logging() -> (MultiProgress, Args) {
             )
         }
     });
-    
+
     let args = Args::parse();
 
     if let Some(level) = args.log_level {
@@ -162,7 +171,9 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result {
         }
         Command::Auth { command } => auth::handle(command, client, cred_storage, multi).await?,
         Command::Problem { command } => problem::handle(command, client, &prefs, multi).await?,
-        Command::Solution { command } => solution::handle(command, client, &prefs, multi, dirs).await?,
+        Command::Solution { command } => {
+            solution::handle(command, client, &prefs, multi, dirs).await?
+        }
         Command::Preferences { command } => preferences::handle(command, &prefs, multi).await?,
     }
 
@@ -172,7 +183,9 @@ async fn run_internal(multi: MultiProgress, args: Args) -> Result {
 pub async fn run() -> ExitCode {
     let (multi, args) = setup_logging();
     if let Err(err) = run_internal(multi, args).await {
-        error!("Unexpected error: {}", err);
+        if !matches!(err, CliError::ExitError) {
+            error!("Unexpected error: {}", err);
+        }
         return ExitCode::from(1);
     }
 
