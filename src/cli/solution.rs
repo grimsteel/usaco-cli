@@ -1,4 +1,4 @@
-use std::{borrow::Cow, process::Stdio, io::ErrorKind, path::Path};
+use std::{borrow::Cow, process::Stdio, io::ErrorKind, path::Path, time::Duration};
 use super::{problem::{open_url, get_problem}, status_spinner::StatusSpinner};
 use crate::{
     http_client::{Division, HttpClient, IoMode},
@@ -12,6 +12,7 @@ use tokio::{
     io::{BufReader, AsyncBufReadExt, AsyncWriteExt},
     select,
     fs::{create_dir_all, try_exists, write, read_to_string, remove_file, metadata},
+    time::timeout,
     process::Command as ProcessCommand,
 };
 use directories::ProjectDirs;
@@ -49,7 +50,10 @@ pub enum Command {
             ],
             default_value = "false"
         )]
-        show_diffs: bool
+        show_diffs: bool,
+        /// Apply a time limit in seconds. When used as a flag, defaults to 2 (C++) and 4 (Python)
+        #[arg(short, long, default_missing_value = "-1", num_args = 0..=1, require_equals = true)]
+        time_limit: Option<i8>
     },
     /// View the official solution writeup. Only available for problems from past contests
     Writeup {
@@ -239,13 +243,11 @@ int main() {{
                 })
                 .await?;
             },
-            Command::Test { problem_id, use_official_data, show_diffs } => {
+            Command::Test { problem_id, use_official_data, show_diffs, time_limit } => {
                 let lang = lock.preferred_language;
                 let compiler = lock.cpp_compiler;
-                let multi_2 = multi.clone();
                 let cache_dir = dirs.cache_dir();
-                let client_2 = client.clone();
-                get_problem(problem_id, &client_2, store, &multi, |problem| async move {
+                get_problem(problem_id, &client.clone(), store, &multi.clone(), |problem| async move {
                     let filename = format!("{}.{}", problem.id, lang.to_str());
                     let problem_file = dir.join("src").join(problem.division.to_str()).join(filename);
                     // problem file for python, out file for cpp
@@ -254,7 +256,7 @@ int main() {{
                     if try_exists(&problem_file).await? {
                         // compile
                         if lang == Language::CPP {
-                            let status = StatusSpinner::new("Compiling solution...", &multi_2);
+                            let status = StatusSpinner::new("Compiling solution...", &multi);
                             
                             // make sure the output dir exists
                             let mut out_file = dir.join("bin").join(problem.division.to_str());
@@ -312,7 +314,7 @@ int main() {{
                         }
 
                         let test_cases = if use_official_data {
-                            let status = StatusSpinner::new("Downloading official test data...", &multi_2);
+                            let status = StatusSpinner::new("Downloading official test data...", &multi);
                             // make sure official data has been released
                             if let Some(rd) = problem.released_data {
                                 let data = client.get_official_test_cases(&rd.official_test_case_url).await?;
@@ -328,7 +330,7 @@ int main() {{
                         };
 
                         // test solution
-                        let status = StatusSpinner::new("Testing solution...", &multi_2);
+                        let status = StatusSpinner::new("Testing solution...", &multi);
                         let in_file_name = if let IoMode::File(filename) = &problem.input {
                             Some(cache_dir.join(filename))
                         } else {
@@ -396,8 +398,26 @@ int main() {{
                                 }
                             });
 
+                            // wait for completion, possibly with timeout
+                            let out = if let Some(mut time_limit) = time_limit {
+                                if time_limit == -1 {
+                                    // apply default timeout
+                                    time_limit = match lang {
+                                        Language::CPP => 2,
+                                        Language::Python => 4
+                                    };
+                                }
+                                match timeout(Duration::from_secs(time_limit.try_into().unwrap_or(2)), child.wait_with_output()).await {
+                                    Ok(r) => r?,
+                                    Err(_) => {
+                                        error!("Case {} timed out", i + 1);
+                                        continue;
+                                    },
+                                }
+                            } else {
+                                child.wait_with_output().await?
+                            };
                             // get output, either by reading output file or stdout
-                            let out = child.wait_with_output().await?;
                             let out = if let Some(out_file_name) = &out_file_name {
                                 Cow::Owned(read_to_string(&out_file_name).await?)
                             } else {
