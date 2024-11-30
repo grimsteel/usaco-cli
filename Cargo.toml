@@ -11,6 +11,7 @@ description = "Unofficial USACO cli: Supports automatic solution testing and sub
 
 [dependencies]
 async-trait = "0.1.83"
+bytes = "1.9.0"
 clap = { version = "4.5.20", features = ["derive"] }
 clap_complete = "4.5.36"
 console = "0.15.8"
@@ -30,6 +31,7 @@ serde_json = "1.0.132"
 similar = "2.6.0"
 thiserror = "1.0.66"
 tokio = { version = "1.41.0", features = ["rt", "rt-multi-thread", "macros", "sync", "fs", "net", "process"] }
+zip = { version = "2.2.1", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 secret-service = { version = "4.0.0", features = ["rt-tokio-crypto-openssl"] }

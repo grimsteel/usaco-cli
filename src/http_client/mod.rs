@@ -11,6 +11,7 @@ use regex::Regex;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use zip::result::ZipError;
 
 use crate::credential_storage::{CredentialStorage, CredentialStorageError};
 
@@ -19,10 +20,14 @@ pub use problem::{Problem, IoMode};
 
 #[derive(Error, Debug)]
 pub enum HttpClientError {
-    #[error("HTTP error")]
+    #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
-    #[error("Credential storage error")]
+    #[error("Credential storage error: {0}")]
     CredentialStorage(#[from] CredentialStorageError),
+    #[error("I/O error: {0}")]
+    IOError(#[from] std::io::Error),
+    #[error("Zip file error: {0}")]
+    ZipError(#[from] ZipError),
 
     #[error("You are not currently logged in")]
     LoggedOut,
@@ -107,6 +112,7 @@ impl Division {
     }
 }
 
+#[derive(Clone)]
 pub struct HttpClient {
     cred_storage: Arc<dyn CredentialStorage>,
     client: Client,

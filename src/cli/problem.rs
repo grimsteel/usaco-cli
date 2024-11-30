@@ -66,7 +66,7 @@ fn print_problem(problem: &Problem) {
 pub async fn get_problem<
     'a,
     T: FnOnce(Problem) -> R,
-    R: Future<Output = super::Result> + Send + Sync + 'a,
+    R: Future<Output = super::Result> + 'a,
 >(
     id_param: Option<u64>,
     client: &HttpClient,

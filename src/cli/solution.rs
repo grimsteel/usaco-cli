@@ -4,7 +4,7 @@ use crate::{
     http_client::{Division, HttpClient, IoMode},
     preferences::{DataStore, Language, CPPCompiler},
 };
-use clap::Subcommand;
+use clap::{Subcommand, ArgAction};
 use console::{style, Style};
 use indicatif::MultiProgress;
 use log::{info, warn, error};
@@ -34,6 +34,22 @@ pub enum Command {
     Test {
         /// Problem ID. Will prompt if not given and if current problem is not set.
         problem_id: Option<u64>,
+        /// Test with official problem data. Only available for problems from past contests
+        #[arg(short = 'o', long)]
+        use_official_data: bool,
+        /// Show diffs for failing test cases.
+        /// Defaults to true with sample data
+        #[arg(
+            short = 'd',
+            long,
+            action = ArgAction::Set,
+            default_value_ifs = [
+                ("use_official_data", "true", Some("false")),
+                ("use_official_data", "false", Some("true"))
+            ],
+            default_value = "false"
+        )]
+        show_diffs: bool
     },
     /// View the official solution writeup. Only available for problems from past contests
     Writeup {
@@ -41,7 +57,7 @@ pub enum Command {
         problem_id: Option<u64>,
         /// Open the writeup in the default browser
         #[arg(short, long)]
-        open: bool
+        open: bool,
     }
 }
 
@@ -223,12 +239,13 @@ int main() {{
                 })
                 .await?;
             },
-            Command::Test { problem_id } => {
+            Command::Test { problem_id, use_official_data, show_diffs } => {
                 let lang = lock.preferred_language;
                 let compiler = lock.cpp_compiler;
                 let multi_2 = multi.clone();
                 let cache_dir = dirs.cache_dir();
-                get_problem(problem_id, &client, store, &multi, |problem| async move {
+                let client_2 = client.clone();
+                get_problem(problem_id, &client_2, store, &multi, |problem| async move {
                     let filename = format!("{}.{}", problem.id, lang.to_str());
                     let problem_file = dir.join("src").join(problem.division.to_str()).join(filename);
                     // problem file for python, out file for cpp
@@ -294,6 +311,22 @@ int main() {{
                             run_file = out_file;
                         }
 
+                        let test_cases = if use_official_data {
+                            let status = StatusSpinner::new("Downloading official test data...", &multi_2);
+                            // make sure official data has been released
+                            if let Some(rd) = problem.released_data {
+                                let data = client.get_official_test_cases(&rd.official_test_case_url).await?;
+                                status.finish("Downloaded", true);
+                                data
+                            } else {
+                                status.finish("Official test data has not yet been released.", false);
+                                return Ok(());
+                                
+                            }
+                        } else {
+                            problem.test_cases
+                        };
+
                         // test solution
                         let status = StatusSpinner::new("Testing solution...", &multi_2);
                         let in_file_name = if let IoMode::File(filename) = &problem.input {
@@ -317,7 +350,8 @@ int main() {{
                         } else {
                             None
                         };
-                        for (i, test_case) in problem.test_cases.iter().enumerate() {
+                        
+                        for (i, test_case) in test_cases.iter().enumerate() {
                             // write input file
                             if let Some(in_file_name) = &in_file_name {
                                 write(in_file_name, &test_case.input).await?;
@@ -376,28 +410,32 @@ int main() {{
                             if trimmed_out == trimmed_target_out {
                                 info!("Case {} passed", i + 1);
                             } else {
-                                error!("Case {} failed\n{}", i + 1, style("Diff:").cyan());
-                                // print diff
-                                let diff = TextDiff::from_lines(
-                                    trimmed_target_out,
-                                    trimmed_out
-                                );
-                                for change in diff.iter_all_changes() {
-                                    let (sign, s) = match change.tag() {
-                                        ChangeTag::Delete => ("-", Style::new().red()),
-                                        ChangeTag::Insert => ("+", Style::new().green()),
-                                        ChangeTag::Equal => (" ", Style::new()),
-                                    };
-                                    info!(
-                                        "{}｜ {}{}",
-                                        style(
-                                            change.new_index()
-                                                .map(|s| format!("{:<3}", s + 1))
-                                                .unwrap_or_else(|| "   ".to_string())
-                                        ).dim(),
-                                        s.apply_to(sign).bold(),
-                                        s.apply_to(change.as_str().unwrap_or("").trim_end())
+                                if show_diffs {
+                                    error!("Case {} failed\n{}", i + 1, style("Diff:").cyan());
+                                    // print diff
+                                    let diff = TextDiff::from_lines(
+                                        trimmed_target_out,
+                                        trimmed_out
                                     );
+                                    for change in diff.iter_all_changes() {
+                                        let (sign, s) = match change.tag() {
+                                            ChangeTag::Delete => ("-", Style::new().red()),
+                                            ChangeTag::Insert => ("+", Style::new().green()),
+                                            ChangeTag::Equal => (" ", Style::new()),
+                                        };
+                                        info!(
+                                            "{}｜ {}{}",
+                                            style(
+                                                change.new_index()
+                                                    .map(|s| format!("{:<3}", s + 1))
+                                                    .unwrap_or_else(|| "   ".to_string())
+                                            ).dim(),
+                                            s.apply_to(sign).bold(),
+                                            s.apply_to(change.as_str().unwrap_or("").trim_end())
+                                        );
+                                    }
+                                } else {
+                                    error!("Case {} failed", i + 1);
                                 }
                             }
                         }

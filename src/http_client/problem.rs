@@ -3,7 +3,8 @@ use console::style;
 use regex::{Captures, Regex};
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
+use zip::ZipArchive;
+use std::{io::{Cursor, Read}, sync::LazyLock};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Problem {
@@ -211,6 +212,79 @@ impl HttpClient {
             writeup_url,
             writeup
         })
+    }
+
+    /// download official test cases and parse
+    pub async fn get_official_test_cases(&self, zip_url: &str) -> Result<Vec<TestCase>> {
+        let res = self
+            .client
+            .get(zip_url)
+            .send()
+            .await?;
+        let body = Cursor::new(res.bytes().await?);
+        let mut zip = ZipArchive::new(body)?;
+
+        // old format == {I,O}.[0-9]
+        // new format = [0-9].{in,out}
+        let mut old_format = false;
+        let mut num_cases: u8 = 0;
+
+        // figure out how many test cases there are and what format they use
+        for file in zip.file_names() {
+            if let Some((name, ext)) = file.split_once('.') {
+                if let Ok(num) = if name == "I" || name == "O" {
+                    old_format = true;
+                    // number in extension
+                    ext.parse()
+                } else {
+                    // number in filename
+                    name.parse()
+                } {
+                    // update num cases
+                    if num > num_cases {
+                        num_cases = num;
+                    }
+                }
+            } else {
+                // error out
+                return Err(HttpClientError::UnexpectedResponse("Unknown test case file name format"));
+            }
+        }
+
+        let mut vec = vec![];
+        for case_id in 1..=num_cases {
+            // filenames of in/out files
+            let (in_name, out_name) = if old_format {
+                (format!("I.{}", case_id), format!("O.{}", case_id))
+            } else {
+                (format!("{}.in", case_id), format!("{}.out", case_id))
+            };
+
+            let in_contents = zip.by_name(&in_name)
+                .ok()
+                .and_then(|mut file| {
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents).ok()?;
+                    Some(contents)
+                });
+            let out_contents = zip.by_name(&out_name)
+                .ok()
+                .and_then(|mut file| {
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents).ok()?;
+                    Some(contents)
+                });
+            
+            // read in/out files
+            if let Some((input, output)) = in_contents.zip(out_contents) {
+                vec.push(TestCase {
+                    input,
+                    output
+                })
+            }
+        }
+        
+        Ok(vec)
     }
     
     pub async fn get_problem(&self, problem_id: u64) -> Result<Problem> {
