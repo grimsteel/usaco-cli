@@ -9,6 +9,7 @@ use crate::{
 };
 use clap::{ArgAction, Subcommand};
 use console::{style, Style};
+use dialoguer::{Select, theme::ColorfulTheme};
 use directories::ProjectDirs;
 use indicatif::MultiProgress;
 use log::{error, info, warn};
@@ -66,6 +67,11 @@ pub enum Command {
         #[arg(short, long, default_missing_value = "-1", num_args = 0..=1, require_equals = true)]
         time_limit: Option<i8>,
     },
+    /// Debug a solution using an interactive debugger
+    Debug {
+        /// Problem ID. Will prompt if not given and if current problem is not set.
+        problem_id: Option<u64>,
+    },
     /// View the official solution writeup. Only available for problems from past contests
     Writeup {
         /// Problem ID. Will prompt if not given and if current problem is not set.
@@ -105,7 +111,7 @@ pub async fn file_newer<T: AsRef<Path>>(file1: T, file2: T) -> std::io::Result<b
 
 /// windows uses py/py3
 fn get_python_executable() -> std::io::Result<Option<&'static str>> {
-    for name in ["python3", "python2", "python", "py3", "py"] {
+    for name in ["python3", "python", "py3", "py"] {
         match ProcessCommand::new(name)
             .arg("-V")
             .stdout(Stdio::piped())
@@ -361,6 +367,81 @@ int main() {{
                     &multi.clone(),
                     |problem| async move {
                         compile_solution(&problem, &multi, &*lock).await?;
+                        Ok(())
+                    }
+                ).await?;
+            }
+            Command::Debug { problem_id } => {
+                let lang = lock.preferred_language;
+                let cache_dir = dirs.cache_dir();
+                get_problem(
+                    problem_id,
+                    &client.clone(),
+                    store,
+                    &multi.clone(),
+                    |problem| async move {
+                        let run_file = compile_solution(&problem, &multi, &*lock).await?;
+
+                        let problem_cache_dir = cache_dir.join(format!("{}-debug", problem.id));
+                        create_dir_all(&problem_cache_dir).await?;
+
+                        // save input files in the cache dir
+                        if let IoMode::File(filename) = &problem.input {
+                            // prompt user to select a test case to store (we can only do one)
+                            let items = 1..=problem.test_cases.len();
+                            let selection = Select::with_theme(&ColorfulTheme::default())
+                                .with_prompt("Select a test case to use:")
+                                .items(&items.collect::<Vec<_>>())
+                                .interact()
+                                .unwrap();
+                            write(
+                                problem_cache_dir.join(&filename),
+                                problem.test_cases[selection].input.as_bytes()
+                            ).await?;
+                        } else {
+                            let status = StatusSpinner::new("Storing input files...", &multi);
+                            // just save all files
+                            let mut filenames: Vec<Option<String>> = vec![None; problem.test_cases.len()];
+                            for (i, case) in problem.test_cases.iter().enumerate() {
+                                let filename = format!("input{}.txt", i + 1);
+                                write(problem_cache_dir.join(&filename), case.input.as_bytes()).await?;
+                                filenames[i] = Some(filename);
+                            }
+
+                            let filenames = filenames.into_iter()
+                                .map(|f| f.unwrap())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            status.finish(&format!("Input files saved as {}", filenames), true);
+                        }
+
+                        // start debugger
+                        let mut command = match lang {
+                            Language::CPP => ProcessCommand::new("gdb"),
+                            Language::Python => {
+                                let mut c = ProcessCommand::new(
+                                    // figure out what python executable to use
+                                    if let Some(exec) = get_python_executable()? {
+                                        exec
+                                    } else {
+                                        error!("Could not find Python executable");
+                                        return Err(CliError::ExitError);
+                                    }
+                                );
+                                c.arg("-m").arg("pdb");
+                                c
+                            }
+                        };
+                        
+                        // spawn the debugger
+                        command
+                            .arg(&run_file)
+                            .current_dir(&problem_cache_dir)
+                            .status().await?;
+
+                        // clean up
+                        remove_dir_all(problem_cache_dir).await?;
+                        
                         Ok(())
                     }
                 ).await?;
