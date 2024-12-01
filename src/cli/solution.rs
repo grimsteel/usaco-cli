@@ -15,7 +15,7 @@ use log::{error, info, warn};
 use similar::{ChangeTag, TextDiff};
 use std::{borrow::Cow, io::ErrorKind, path::{Path, PathBuf}, process::Stdio, time::Duration, ops::Deref};
 use tokio::{
-    fs::{create_dir_all, metadata, read_to_string, remove_file, try_exists, write},
+    fs::{create_dir_all, metadata, read_to_string, remove_file, try_exists, write, remove_dir_all},
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command as ProcessCommand,
     select,
@@ -30,8 +30,15 @@ pub enum Command {
         #[arg(short, long)]
         no_git: bool,
     },
+    /// Clean built solutions directory
+    Clean,
     /// Bootstrap an initial solution file
     Create {
+        /// Problem ID. Will prompt if not given and if current problem is not set.
+        problem_id: Option<u64>,
+    },
+    /// Compile a solution without testing
+    Compile {
         /// Problem ID. Will prompt if not given and if current problem is not set.
         problem_id: Option<u64>,
     },
@@ -132,9 +139,8 @@ async fn compile_solution<T: Deref<Target = Preferences>>(problem: &Problem, mul
     
     if try_exists(&problem_file).await? {
         // compile
-        if prefs.preferred_language == Language::CPP {
-            let status = StatusSpinner::new("Compiling solution...", &multi);
-            
+        let status = StatusSpinner::new("Compiling solution...", &multi);
+        if prefs.preferred_language == Language::CPP {            
             // make sure the output dir exists
             let mut out_file = dir.join("bin").join(problem.division.to_str());
             create_dir_all(&out_file).await?;
@@ -142,7 +148,7 @@ async fn compile_solution<T: Deref<Target = Preferences>>(problem: &Problem, mul
             
             // if run file is newer than source file, no compilation needed
             if file_newer(&problem_file, &out_file).await? {
-                status.finish("Compilation skipped", true);
+                status.finish("Compilation not needed", true);
             } else {
                 // compile
                 let mut command = ProcessCommand::new(match prefs.cpp_compiler {
@@ -188,6 +194,8 @@ async fn compile_solution<T: Deref<Target = Preferences>>(problem: &Problem, mul
             }
             
             run_file = out_file;
+        } else {
+            status.finish("Compilation not needed", true);
         }
         Ok(run_file)
     } else {
@@ -234,6 +242,13 @@ pub async fn handle(
                 }
 
                 status.finish("Scaffolded successfully!", true);
+            }
+            Command::Clean => {
+                // remove bin dir
+                let status = StatusSpinner::new("Removing compiled solutions...", &multi);
+                let bin_dir = dir.join("bin");
+                remove_dir_all(bin_dir).await?;
+                status.finish("Compiled solutions removed", true);
             }
             Command::Writeup { problem_id, open } => {
                 get_problem(problem_id, &client, store, &multi, |problem| async move {
@@ -337,6 +352,18 @@ int main() {{
                     Ok(())
                 })
                 .await?;
+            }
+            Command::Compile { problem_id } => {
+                get_problem(
+                    problem_id,
+                    &client.clone(),
+                    store,
+                    &multi.clone(),
+                    |problem| async move {
+                        compile_solution(&problem, &multi, &*lock).await?;
+                        Ok(())
+                    }
+                ).await?;
             }
             Command::Test {
                 problem_id,
