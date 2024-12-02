@@ -120,7 +120,9 @@ pub struct HttpClient {
 
 impl HttpClient {
     pub fn init(cred_storage: Arc<dyn CredentialStorage>) -> Self {
-        let client = Client::new();
+        let client = Client::builder()
+            .user_agent(format!("github.com/grimsteel/usaco-cli v{} by contact [dot] 61uq6rb3dw [at] kameswar [dot] com", env!("CARGO_PKG_VERSION")))
+            .build().unwrap();
         Self {
             client,
             cred_storage,
