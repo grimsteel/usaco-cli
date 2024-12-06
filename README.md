@@ -11,7 +11,6 @@ A command line tool for USACO
 - View problem info from command line
 - Scaffold solution code
 - Automatically test solutions with sample input cases
-- Upload solution code to USACO and view results (coming soon)
 - View solution stats and find [new problems to solve](https://github.com/imgroot2/algo) (coming soon)
 
 **Supported languages**:
@@ -46,14 +45,14 @@ Make a GH issue if you want more targets
 
 ```sh
 $ usaco --help
-USACO command-line interface: supports viewing problem info, automatically testing solutions, and uploading solutions to USACO grading servers.
+USACO command-line interface: supports viewing problem info, automatically testing solutions, and viewing test case diffs.
 
 Usage: usaco [OPTIONS] <COMMAND>
 
 Commands:
   auth         Manage USACO account authentication
   problem      View problem info
-  solution     Manage, test, and submit solutions
+  solution     Manage and test solutions
   preferences  Manage CLI preferences
   completion   Generate shell completion files
   ping         Test connection to USACO servers

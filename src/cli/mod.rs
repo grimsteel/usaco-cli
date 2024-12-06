@@ -29,7 +29,7 @@ use thiserror::Error;
 #[command(
     version,
     about,
-    long_about = "USACO command-line interface: supports viewing problem info, automatically testing solutions, and uploading solutions to USACO grading servers.",
+    long_about = "USACO command-line interface: supports viewing problem info, automatically testing solutions, and viewing test case diffs",
     name = "usaco"
 )]
 struct Args {
@@ -53,7 +53,7 @@ enum Command {
         #[command(subcommand)]
         command: problem::Command,
     },
-    /// Manage, test, and submit solutions
+    /// Manage and test solutions
     Solution {
         #[command(subcommand)]
         command: solution::Command,
