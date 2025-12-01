@@ -7,7 +7,7 @@ use clap::Subcommand;
 use console::{style, Color};
 use dialoguer::{theme::ColorfulTheme, Input};
 use indicatif::MultiProgress;
-use std::{future::Future, process::Stdio};
+use std::{future::Future, io::{stdin, Read}, process::Stdio};
 use tokio::process::Command as ProcessCommand;
 
 #[derive(Subcommand, Debug)]
@@ -42,6 +42,14 @@ pub enum CacheCommand {
         #[arg(short, long, num_args = 0..)]
         problem_ids: Vec<u64>,
     },
+    /// Manually import a problem into the cache
+    /// For environments where fetching the problem automatically does not work
+    /// Problem content is read from standard input
+    Import {
+        /// The problem ID of the problem to import
+        /// Required. Will not prompt or use current-problem
+        id: u64
+    }
 }
 
 fn print_problem(problem: &Problem) {
@@ -62,6 +70,34 @@ fn print_problem(problem: &Problem) {
     );
     println!("{}", problem.description);
 }
+
+/// Import a problem into the store by parsing problem HTML from stdin
+async fn import_problem_stdin(problem_id: u64, client: &HttpClient, store: &DataStore) -> super::Result<String> {
+    // read problem HTML from stdin
+    let stdin_handle = stdin();
+    let mut stdin_lock = stdin_handle.lock();
+    let mut input = Vec::new();
+    stdin_lock.read_to_end(&mut input)?;
+    
+    // parse string
+    let input = String::from_utf8_lossy(&input).into_owned();
+
+    let problem = client.parse_problem_html(problem_id, input, false).await?;
+
+    let message = format!(
+        "Successfully imported {} ({})",
+        style(format!("problem {}", problem_id))
+            .bold()
+            .bright()
+            .cyan(),
+        problem.name
+    );
+
+    // store
+    store.insert_cache(problem).await?;
+
+    Ok(message)
+} 
 
 pub async fn get_problem<'a, T: FnOnce(Problem) -> R, R: Future<Output = super::Result> + 'a>(
     id_param: Option<u64>,
@@ -228,6 +264,20 @@ pub async fn handle(
                     value.name,
                     style(format!("({})", value.id)).magenta()
                 );
+            }
+        }
+        Command::Cache {
+            command: CacheCommand::Import { id: problem_id },
+        } => {
+            let status = StatusSpinner::new("Loading problem...", &multi);
+
+            match import_problem_stdin(problem_id, &client, store).await {
+                Ok(message) => {
+                    status.finish(&message, true);
+                }
+                Err(err) => {
+                    status.finish(&format!("Error importing problem: {}", err), false);
+                }
             }
         }
         Command::Cache {

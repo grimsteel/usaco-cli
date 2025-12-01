@@ -153,6 +153,7 @@ fn parse_problem_description(el: ElementRef<'_>, is_pre: bool, is_inline: bool) 
 }
 
 impl HttpClient {
+    /// Fetch released test case and writeup data for a problem
     async fn get_released_problem_data(
         &self,
         problem_id: u64,
@@ -217,7 +218,7 @@ impl HttpClient {
         })
     }
 
-    /// download official test cases and parse
+    /// download official test cases from zip file and parse
     pub async fn get_official_test_cases(&self, zip_url: &str) -> Result<Vec<TestCase>> {
         let res = self.client.get(zip_url).send().await?;
         let body = Cursor::new(res.bytes().await?);
@@ -281,23 +282,9 @@ impl HttpClient {
         Ok(vec)
     }
 
-    pub async fn get_problem(&self, problem_id: u64) -> Result<Problem> {
-        let res = self
-            .client
-            .get(&format!(
-                "https://usaco.org/index.php?page=viewproblem2&cpid={}",
-                problem_id
-            ))
-            .send()
-            .await?;
-
-        let body: String = res.text().await?;
-        // not found
-        if REDIRECT_RE.find(&body).is_some() {
-            return Err(HttpClientError::ProblemNotFound);
-        }
-
-        let doc = Html::parse_document(&body);
+    /// Parse a `Problem` out of a problem view HTML document 
+    pub async fn parse_problem_html(&self, problem_id: u64, problem_body: String, fetch_released_data: bool) -> Result<Problem> {
+        let doc = Html::parse_document(&problem_body);
         let h2_selector = Selector::parse("h2").unwrap();
         let mut headings = doc.select(&h2_selector);
         // parse the first heading (contest and division)
@@ -347,8 +334,13 @@ impl HttpClient {
             .ir_msg("could not find problem description")?;
         let description =
             parse_problem_description(description, false, false).unwrap_or_else(|| "".into());
-
-        let released_data = self.get_released_problem_data(problem_id, &doc).await;
+        
+        // only fetch released data if needed
+        let released_data = if fetch_released_data {
+            self.get_released_problem_data(problem_id, &doc).await
+        } else {
+            None
+        };
 
         // construct problem struct
         Ok(Problem {
@@ -369,5 +361,25 @@ impl HttpClient {
             description,
             released_data,
         })
+    }
+
+    /// Fetch a problem with the given ID
+    pub async fn get_problem(&self, problem_id: u64) -> Result<Problem> {
+        let res = self
+            .client
+            .get(&format!(
+                "https://usaco.org/index.php?page=viewproblem2&cpid={}",
+                problem_id
+            ))
+            .send()
+            .await?;
+
+        let body: String = res.text().await?;
+        // not found
+        if REDIRECT_RE.find(&body).is_some() {
+            return Err(HttpClientError::ProblemNotFound);
+        }
+
+        self.parse_problem_html(problem_id, body, true).await
     }
 }

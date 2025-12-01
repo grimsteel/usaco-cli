@@ -148,7 +148,7 @@ impl DataStore {
     }
 
     /// insert a problem into the LRU cache
-    pub async fn get_cache(&self, id: u64) -> Result<Option<Ref<Problem>>> {
+    pub async fn get_cache(&'_ self, id: u64) -> Result<Option<Ref<'_, Problem>>> {
         let mut lock = self
             .problem_cache
             .try_borrow_mut()
@@ -169,7 +169,7 @@ impl DataStore {
     }
 
     /// get the entire cache
-    pub fn get_full_cache(&self) -> Result<Ref<ProblemCache>> {
+    pub fn get_full_cache(&'_ self) -> Result<Ref<'_, ProblemCache>> {
         self.problem_cache
             .try_borrow()
             .map_err(|_| PreferencesError::PrefsLocked)
