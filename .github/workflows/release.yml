@@ -69,5 +69,8 @@ jobs:
         name: Checkout
       - uses: dtolnay/rust-toolchain@stable
         name: Setup rust
-      - name: Cargo publish
-        run: cargo publish --no-verify --token ${{ secrets.CARGO_API_TOKEN }}
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
